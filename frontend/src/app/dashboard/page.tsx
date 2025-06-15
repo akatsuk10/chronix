@@ -1,41 +1,59 @@
+"use client"
+import { SiteHeader } from "@/components/site-header"
 import { BettingForm } from "@/components/dashboard/BettingForm";
 import { TradingViewWidget } from "@/components/dashboard/TradingWidgetBTC";
 import { TradingViewWidgetETH } from "@/components/dashboard/TradingWidgetETH";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-export default function Dashboard() {
-  return (
-    <div className="flex flex-col h-screen bg-gray-900 text-white">
-      <header className="p-4 border-b border-gray-800">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-      </header>
+import {
+  SidebarInset,
+  SidebarProvider,
+} from "@/components/ui/sidebar"
 
-      <main className="flex-1 h-full p-4">
+import data from "./data.json"
+
+export default function Page() {
+  return (
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "calc(var(--spacing) * 72)",
+          "--header-height": "calc(var(--spacing) * 12)",
+        } as React.CSSProperties
+      }
+    >
+      <SidebarInset>
+        <SiteHeader />
+        <div className="flex flex-1 flex-col">
+          <div className="@container/main flex flex-1 gap-2">
+          <main className="flex-1 h-full w-full p-4">
         <Tabs defaultValue="BTC" className="h-full">
           <TabsList>
             <TabsTrigger value="BTC">BTC</TabsTrigger>
             <TabsTrigger value="ETH">ETH</TabsTrigger>
+            <TabsTrigger value="SOL">SOL</TabsTrigger>
+            <TabsTrigger value="TRON">TRON</TabsTrigger>
           </TabsList>
 
           <TabsContent value="BTC" className="h-full flex gap-4">
-            <div className="w-[70%] h-[60vh] rounded-lg overflow-hidden shadow-lg">
+            <div className="h-[60vh] w-full rounded-lg overflow-hidden shadow-lg">
               <TradingViewWidget />
-            </div>
-            <div className="w-[30%] h-full">
-              <BettingForm />
             </div>
           </TabsContent>
 
           <TabsContent value="ETH" className="h-full flex gap-4">
-            <div className="w-[70%] h-[60vh] rounded-lg overflow-hidden shadow-lg">
+            <div className="h-[60vh] w-full rounded-lg overflow-hidden shadow-lg">
               <TradingViewWidgetETH />
-            </div>
-            <div className="w-[30%] h-full">
-              <BettingForm />
             </div>
           </TabsContent>
         </Tabs>
       </main>
-    </div>
-  );
+      <div className="w-[26%] h-screen bg-stone-900 m-4 p-4 rounded-xl">
+              <BettingForm />
+            </div>
+          </div>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
+  )
 }
