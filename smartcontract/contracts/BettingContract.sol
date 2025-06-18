@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
-import "@chainlink/contracts/src/v0.8/interfaces/KeeperCompatibleInterface.sol";
+import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import {AutomationCompatibleInterface} from "@chainlink/contracts/src/v0.8/automation/AutomationCompatible.sol";
 
-contract BTCBetting is KeeperCompatibleInterface {
+interface ILottery {
+    function enterLottery(address user) external payable;
+}
+
+contract BTCBetting is AutomationCompatibleInterface {
     AggregatorV3Interface public immutable btcPriceFeed;
 
     address public owner;
@@ -20,9 +24,22 @@ contract BTCBetting is KeeperCompatibleInterface {
 
     mapping(address => Bet) public bets;
     address[] public activeBettors;
+    address public lotteryContract;
 
-    event BetPlaced(address indexed user, uint8 position, uint256 amount, int256 startPrice);
-    event BetSettled(address indexed user, bool won, uint256 payout, string result, int256 startPrice, int256 endPrice);
+    event BetPlaced(
+        address indexed user,
+        uint8 position,
+        uint256 amount,
+        int256 startPrice
+    );
+    event BetSettled(
+        address indexed user,
+        bool won,
+        uint256 payout,
+        string result,
+        int256 startPrice,
+        int256 endPrice
+    );
     event PoolFunded(address indexed funder, uint256 amount);
     event PoolWithdrawn(address indexed admin, uint256 amount);
 
@@ -31,18 +48,28 @@ contract BTCBetting is KeeperCompatibleInterface {
         _;
     }
 
-    constructor(address _priceFeed) {
-        btcPriceFeed = AggregatorV3Interface(_priceFeed);
+    // Use Chainlink BTC/USD feed address on Fuji: 0x2779D32d5166BAaa2B2b658333bA7e6Ec0C65743
+    constructor() {
+        btcPriceFeed = AggregatorV3Interface(
+            0x2779D32d5166BAaa2B2b658333bA7e6Ec0C65743
+        );
         owner = msg.sender;
     }
 
-    // ========== New Function for Vault Integration ==========
+    function setLotteryContract(address _lottery) external onlyOwner {
+        require(_lottery != address(0), "Invalid address");
+        lotteryContract = _lottery;
+    }
+
     function placeBetFor(address user, uint8 _position) public payable {
         require(_position == 0 || _position == 1, "Invalid position");
         require(msg.value > 0, "Bet must be positive");
-        require(bets[user].amount == 0 || bets[user].settled, "Existing active bet");
+        require(
+            bets[user].amount == 0 || bets[user].settled,
+            "Existing active bet"
+        );
 
-        (, int256 startPrice,,,) = btcPriceFeed.latestRoundData();
+        (, int256 startPrice, , , ) = btcPriceFeed.latestRoundData();
 
         poolBalance += msg.value;
 
@@ -59,7 +86,6 @@ contract BTCBetting is KeeperCompatibleInterface {
         emit BetPlaced(user, _position, msg.value, startPrice);
     }
 
-    // ========== Existing Direct User Bet ==========
     function placeBet(uint8 _position) external payable {
         placeBetFor(msg.sender, _position);
     }
@@ -69,27 +95,46 @@ contract BTCBetting is KeeperCompatibleInterface {
         require(!bet.settled, "Already settled");
         require(block.timestamp >= bet.startTime + 299, "Too early to settle");
 
-        (, int256 endPrice,,,) = btcPriceFeed.latestRoundData();
+        (, int256 endPrice, , , ) = btcPriceFeed.latestRoundData();
 
-        bool won = (bet.position == 0 && endPrice > bet.startPrice) || (bet.position == 1 && endPrice < bet.startPrice);
+        bool won = (bet.position == 0 && endPrice > bet.startPrice) ||
+                   (bet.position == 1 && endPrice < bet.startPrice);
         bool draw = (endPrice == bet.startPrice);
 
         uint256 payout = won ? bet.amount * 2 : (draw ? bet.amount : 0);
-
         bet.settled = true;
 
         if (payout > 0) {
+            uint256 lotteryAmount = (bet.amount * 5) / 100;
+            uint256 finalPayout = payout - lotteryAmount;
+
             require(poolBalance >= payout, "Insufficient pool balance");
             poolBalance -= payout;
-            (bool success, ) = payable(user).call{value: payout}("");
+
+            require(lotteryContract != address(0), "Lottery not set");
+            ILottery(lotteryContract).enterLottery{value: lotteryAmount}(user);
+
+            (bool success, ) = payable(user).call{value: finalPayout}("");
             require(success, "ETH Transfer failed");
         }
 
-        emit BetSettled(user, won, payout, won ? "Won" : (draw ? "Draw" : "Lost"), bet.startPrice, endPrice);
+        emit BetSettled(
+            user,
+            won,
+            payout,
+            won ? "Won" : (draw ? "Draw" : "Lost"),
+            bet.startPrice,
+            endPrice
+        );
     }
 
-    // ========== CHAINLINK AUTOMATION ==========
-    function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {
+    // Chainlink Automation
+    function checkUpkeep(bytes calldata)
+        external
+        view
+        override
+        returns (bool upkeepNeeded, bytes memory performData)
+    {
         for (uint256 i = 0; i < activeBettors.length; i++) {
             address user = activeBettors[i];
             Bet storage bet = bets[user];
@@ -112,7 +157,7 @@ contract BTCBetting is KeeperCompatibleInterface {
         activeBettors.pop();
     }
 
-    // ========== POOL FUNDING ==========
+    // Pool funding
     function fundPool() external payable {
         require(msg.value > 0, "No funds sent");
         poolBalance += msg.value;
@@ -131,12 +176,17 @@ contract BTCBetting is KeeperCompatibleInterface {
         emit PoolFunded(msg.sender, msg.value);
     }
 
-    // ========== VIEWS ==========
+    // View helpers
     function getActiveBettors() external view returns (address[] memory) {
         return activeBettors;
     }
 
     function getBet(address user) external view returns (Bet memory) {
         return bets[user];
+    }
+
+    function getCurrentBTCPrice() external view returns (int256) {
+        (, int256 price, , , ) = btcPriceFeed.latestRoundData();
+        return price;
     }
 }
