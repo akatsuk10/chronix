@@ -1,54 +1,54 @@
-'use client'
+"use client";
 
-import { useAppKitAccount, useWalletInfo } from '@reown/appkit/react'
-import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
-import { getNonce, verifySignature, storeTokens } from '@/lib/auth'
-
-interface WalletSigner {
-    signMessage: (params: { message: string; account: string }) => Promise<string>;
-}
+import { useAppKitAccount } from "@reown/appkit/react";
+import { useSignMessage } from "wagmi";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { login, verifySignature, storeTokens } from "@/lib/auth";
 
 export const ConnectButton = () => {
-    const { address, caipAddress, isConnected, embeddedWalletInfo } = useAppKitAccount();
-    const { walletInfo } = useWalletInfo()
-    const router = useRouter()
+  const { address, isConnected } = useAppKitAccount();
+  const { signMessageAsync } = useSignMessage();
+  const router = useRouter();
 
-    useEffect(() => {
-        const handleAuth = async () => {
-            if (!address || !walletInfo) return;
+  useEffect(() => {
+    const handleAuth = async () => {
+      if (!address) return;
 
-            try {
-                // Get nonce
-                const { message } = await getNonce(address);
+      try {
+        // 1️⃣ Initial dummy signature → required by backend for login
+        const initialSignature = await signMessageAsync({
+          message: "Initial authentication attempt",
+        });
 
-                // Sign message using Reown's signMessage
-                const signature = await (walletInfo as unknown as WalletSigner).signMessage({
-                    message,
-                    account: address
-                });
+        // 2️⃣ Call login API → backend will return either { message } or tokens
+        const result = await login(address, initialSignature);
 
-                // Verify signature and get tokens
-                const { accessToken, refreshToken } = await verifySignature(address, signature);
+        if (result.message) {
+          // 3️⃣ If nonce returned → sign it
+          const nonceSignature = await signMessageAsync({
+            message: result.message,
+          });
 
-                // Store tokens
-                storeTokens(accessToken, refreshToken);
-
-                // Redirect to dashboard or home
-                router.push('/dashboard');
-            } catch (error) {
-                console.error('Authentication failed:', error);
-            }
-        };
-
-        if (isConnected) {
-            handleAuth();
+          const { accessToken, refreshToken } = await verifySignature(address, nonceSignature);
+          storeTokens(accessToken, refreshToken);
+        } else if (result.accessToken && result.refreshToken) {
+          storeTokens(result.accessToken, result.refreshToken);
+        } else {
+          throw new Error("Unexpected response from server");
         }
-    }, [isConnected, address, walletInfo, router]);
 
-    return (
-        <div>
-            <appkit-button />
-        </div>
-    )
-}
+        // ✅ Redirect after successful login
+        router.push("/dashboard");
+      } catch (error) {
+        console.error("Authentication failed:", error);
+      }
+    };
+
+    if (isConnected) {
+      handleAuth();
+    }
+  }, [isConnected, address, signMessageAsync, router]);
+
+  return <appkit-button />;
+};

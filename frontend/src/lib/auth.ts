@@ -2,11 +2,18 @@ import { ethers } from "ethers";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
-export async function getNonce(walletAddress: string) {
-  const response = await fetch(`${API_URL}/auth/nonce?walletAddress=${walletAddress}`);
-  if (!response.ok) throw new Error("Failed to get nonce");
-  return response.json();
+export async function login(walletAddress: string, signature: string) {
+  const response = await fetch(`${API_URL}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ walletAddress, signature }),
+  });
+
+  if (!response.ok) throw new Error("Authentication failed");
+  console.log(response)
+  return response.json(); // Could be { message } or { accessToken, refreshToken }
 }
+
 
 export async function verifySignature(walletAddress: string, signature: string) {
   const response = await fetch(`${API_URL}/auth/verify`, {
@@ -40,4 +47,4 @@ export function getStoredTokens() {
 export function clearTokens() {
   localStorage.removeItem('accessToken');
   localStorage.removeItem('refreshToken');
-} 
+}

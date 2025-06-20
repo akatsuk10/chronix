@@ -1,6 +1,6 @@
 import { cookieStorage, createStorage } from 'wagmi'
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
-import { mainnet, arbitrum } from '@reown/appkit/networks'
+import { mainnet, arbitrum, avalanche, avalancheFuji,solana,solanaDevnet,solanaTestnet } from '@reown/appkit/networks'
 import type { AppKitNetwork } from '@reown/appkit/networks'
 import { createConfig, http } from 'wagmi'
 import { sepolia } from 'wagmi/chains'
@@ -12,7 +12,7 @@ if (!projectId) {
   throw new Error('Project ID is not defined')
 }
 
-export const networks = [mainnet, arbitrum] as [AppKitNetwork, ...AppKitNetwork[]]
+export const networks = [mainnet, arbitrum, avalanche,avalancheFuji] as [AppKitNetwork, ...AppKitNetwork[]]
 
 const wagmiConfig = createConfig({
   chains: [mainnet, sepolia],

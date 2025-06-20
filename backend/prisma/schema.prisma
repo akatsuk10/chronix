@@ -18,7 +18,9 @@ model User {
   id            String    @id @default(uuid())
   walletAddress String    @unique
   nonce         String?
+  nonceSigned   Boolean  @default(false)
   createdAt     DateTime  @default(now())
+
   updatedAt     DateTime  @updatedAt
   sessions      Session[]
 }
