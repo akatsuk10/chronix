@@ -12,27 +12,31 @@ interface IBettingContract {
 contract Lottery is VRFConsumerBaseV2Plus, AutomationCompatibleInterface {
     uint256 public s_subscriptionId;
     address public bettingContract;
-    address public vrfCoordinator = 0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE;
-    bytes32 public s_keyHash = 0xc799bd1e3bd4d1a41cd4968997a4e03dfd2a3c7c04b695881138580163f42887;
-    uint32 public callbackGasLimit = 400000;
+    address public immutable vrfCoordinator;
+    bytes32 public immutable s_keyHash;
+    uint32 public callbackGasLimit = 500000;
     uint16 public requestConfirmations = 3;
     uint32 public numWords = 3;
 
     mapping(address => uint256) public points;
     address[] public participants;
-    uint256 public totalPool;
+    mapping(address => bool) public hasParticipated;
 
+    uint256 public totalPool;
     uint256 public interval;
     uint256 public lastTimeStamp;
     bool public requestPending;
 
-    event LotteryEntered(address indexed user, uint256 amount);
-    event WinnersPicked(address[3] winners, uint256[3] prizes);
+    address public admin;
 
-    constructor(uint256 subscriptionId, uint256 updateInterval) VRFConsumerBaseV2Plus(vrfCoordinator) {
-        s_subscriptionId = subscriptionId;
-        interval = updateInterval;
-        lastTimeStamp = block.timestamp;
+    event LotteryEntered(address indexed user, uint256 amount);
+    event WinnersPicked(address[] winners, uint256[] prizes);
+    event Received(address indexed sender, uint256 amount);
+    event OwnershipTransferred(address indexed newOwner);
+
+    modifier onlyAdmin() {
+        require(msg.sender == admin, "Not owner");
+        _;
     }
 
     modifier onlyBettingContract() {
@@ -40,16 +44,37 @@ contract Lottery is VRFConsumerBaseV2Plus, AutomationCompatibleInterface {
         _;
     }
 
-    function setBettingContract(address _bettingContract) external {
-        require(bettingContract == address(0), "Already set");
+    constructor(
+        uint256 subscriptionId,
+        uint256 updateInterval,
+        address _vrfCoordinator,
+        bytes32 _keyHash
+    ) VRFConsumerBaseV2Plus(_vrfCoordinator) {
+        s_subscriptionId = subscriptionId;
+        interval = updateInterval;
+        lastTimeStamp = block.timestamp;
+        admin = msg.sender;
+        vrfCoordinator = _vrfCoordinator;
+        s_keyHash = _keyHash;
+    }
+
+    function setBettingContract(address _bettingContract) external onlyAdmin {
+        require(_bettingContract != address(0), "Invalid address");
         bettingContract = _bettingContract;
+    }
+
+    function changeAdmin(address newAdmin) external onlyAdmin {
+        require(newAdmin != address(0), "Zero address");
+        admin = newAdmin;
+        emit OwnershipTransferred(newAdmin);
     }
 
     function enterLottery(address user) external payable onlyBettingContract {
         require(msg.value > 0, "No ETH sent");
 
-        if (points[user] == 0) {
+        if (!hasParticipated[user]) {
             participants.push(user);
+            hasParticipated[user] = true;
         }
 
         points[user] += 1;
@@ -58,65 +83,66 @@ contract Lottery is VRFConsumerBaseV2Plus, AutomationCompatibleInterface {
         emit LotteryEntered(user, msg.value);
     }
 
-    // Chainlink Automation Interface
-    function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory) {
-        upkeepNeeded = (block.timestamp - lastTimeStamp) >= interval && participants.length >= 3 && !requestPending;
+    function checkUpkeep(
+        bytes calldata
+    ) external view override returns (bool upkeepNeeded, bytes memory) {
+        upkeepNeeded =
+            (block.timestamp - lastTimeStamp) >= interval &&
+            participants.length >= 3 &&
+            !requestPending;
     }
 
     function performUpkeep(bytes calldata) external override {
         require((block.timestamp - lastTimeStamp) >= interval, "Too early");
-        require(participants.length >= 10, "Not enough players");
+        require(participants.length >= 3, "Not enough players");
         require(!requestPending, "Request already pending");
 
         lastTimeStamp = block.timestamp;
         requestPending = true;
 
-        VRFV2PlusClient.RandomWordsRequest memory req = VRFV2PlusClient.RandomWordsRequest({
-            keyHash: s_keyHash,
-            subId: s_subscriptionId,
-            requestConfirmations: requestConfirmations,
-            callbackGasLimit: callbackGasLimit,
-            numWords: numWords,
-            extraArgs: VRFV2PlusClient._argsToBytes(
-                VRFV2PlusClient.ExtraArgsV1({nativePayment: false})
-            )
-        });
+        VRFV2PlusClient.RandomWordsRequest memory req = VRFV2PlusClient
+            .RandomWordsRequest({
+                keyHash: s_keyHash,
+                subId: s_subscriptionId,
+                requestConfirmations: requestConfirmations,
+                callbackGasLimit: callbackGasLimit,
+                numWords: numWords,
+                extraArgs: VRFV2PlusClient._argsToBytes(
+                    VRFV2PlusClient.ExtraArgsV1({nativePayment: false})
+                )
+            });
 
         s_vrfCoordinator.requestRandomWords(req);
     }
 
-    function fulfillRandomWords(uint256, uint256[] calldata randomWords) internal override {
+    function fulfillRandomWords(
+        uint256,
+        uint256[] calldata randomWords
+    ) internal override {
         require(randomWords.length >= 3, "Not enough randomness");
 
-        address[3] memory winners;
-        bool[3] memory assigned;
+        address[] memory winners = new address[](3);
+        bool[] memory picked = new bool[](participants.length);
         uint256 totalPoints = 0;
 
         for (uint i = 0; i < participants.length; i++) {
             totalPoints += points[participants[i]];
         }
 
-        uint256 w = 0;
+        uint256 winnerCount = 0;
         uint256 safety = 0;
-        while (w < 3 && safety < 100) {
-            uint256 rand = randomWords[w % randomWords.length] % totalPoints;
+
+        while (winnerCount < 3 && safety < 100) {
+            uint256 rand = randomWords[winnerCount % randomWords.length] %
+                totalPoints;
             uint256 cumulative = 0;
+
             for (uint i = 0; i < participants.length; i++) {
                 cumulative += points[participants[i]];
-                if (rand < cumulative) {
-                    address winner = participants[i];
-                    bool alreadyPicked = false;
-                    for (uint j = 0; j < w; j++) {
-                        if (winners[j] == winner) {
-                            alreadyPicked = true;
-                            break;
-                        }
-                    }
-                    if (!alreadyPicked) {
-                        winners[w] = winner;
-                        assigned[w] = true;
-                        w++;
-                    }
+                if (rand < cumulative && !picked[i]) {
+                    winners[winnerCount] = participants[i];
+                    picked[i] = true;
+                    winnerCount++;
                     break;
                 }
             }
@@ -126,16 +152,13 @@ contract Lottery is VRFConsumerBaseV2Plus, AutomationCompatibleInterface {
         uint256 fivePercent = (totalPool * 5) / 100;
         uint256 distributable = totalPool - fivePercent;
 
-        uint256[3] memory prizes = [
-            (distributable * 40) / 100,
-            (distributable * 30) / 100,
-            (distributable * 20) / 100
-        ];
+        uint256[] memory prizes = new uint256[](3);
+        prizes[0] = (distributable * 40) / 100;
+        prizes[1] = (distributable * 30) / 100;
+        prizes[2] = (distributable * 20) / 100;
 
-        for (uint i = 0; i < 3; i++) {
-            if (assigned[i]) {
-                payable(winners[i]).transfer(prizes[i]);
-            }
+        for (uint i = 0; i < winnerCount; i++) {
+            payable(winners[i]).transfer(prizes[i]);
         }
 
         if (fivePercent > 0 && bettingContract != address(0)) {
@@ -146,11 +169,15 @@ contract Lottery is VRFConsumerBaseV2Plus, AutomationCompatibleInterface {
 
         for (uint i = 0; i < participants.length; i++) {
             delete points[participants[i]];
+            delete hasParticipated[participants[i]];
         }
+
         delete participants;
         totalPool = 0;
         requestPending = false;
     }
 
-    receive() external payable {}
+    receive() external payable {
+        emit Received(msg.sender, msg.value);
+    }
 }

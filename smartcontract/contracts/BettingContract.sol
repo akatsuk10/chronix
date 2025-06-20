@@ -8,6 +8,10 @@ interface ILottery {
     function enterLottery(address user) external payable;
 }
 
+interface ICarbonCredit {
+    function convertAndMint(address user) external payable;
+}
+
 contract BTCBetting is AutomationCompatibleInterface {
     AggregatorV3Interface public immutable btcPriceFeed;
 
@@ -25,6 +29,7 @@ contract BTCBetting is AutomationCompatibleInterface {
     mapping(address => Bet) public bets;
     address[] public activeBettors;
     address public lotteryContract;
+    address public carbonCreditContract;
 
     event BetPlaced(
         address indexed user,
@@ -48,12 +53,14 @@ contract BTCBetting is AutomationCompatibleInterface {
         _;
     }
 
-    // Use Chainlink BTC/USD feed address on Fuji: 0x2779D32d5166BAaa2B2b658333bA7e6Ec0C65743
-    constructor() {
-        btcPriceFeed = AggregatorV3Interface(
-            0x2779D32d5166BAaa2B2b658333bA7e6Ec0C65743
-        );
+    constructor(address _btcPriceAddress) {
+        btcPriceFeed = AggregatorV3Interface(_btcPriceAddress);
         owner = msg.sender;
+    }
+
+    function setCarbonContract(address _carbon) external onlyOwner {
+        require(_carbon != address(0), "Invalid address");
+        carbonCreditContract = _carbon;
     }
 
     function setLotteryContract(address _lottery) external onlyOwner {
@@ -98,7 +105,7 @@ contract BTCBetting is AutomationCompatibleInterface {
         (, int256 endPrice, , , ) = btcPriceFeed.latestRoundData();
 
         bool won = (bet.position == 0 && endPrice > bet.startPrice) ||
-                   (bet.position == 1 && endPrice < bet.startPrice);
+            (bet.position == 1 && endPrice < bet.startPrice);
         bool draw = (endPrice == bet.startPrice);
 
         uint256 payout = won ? bet.amount * 2 : (draw ? bet.amount : 0);
@@ -106,13 +113,22 @@ contract BTCBetting is AutomationCompatibleInterface {
 
         if (payout > 0) {
             uint256 lotteryAmount = (bet.amount * 5) / 100;
-            uint256 finalPayout = payout - lotteryAmount;
+            uint256 carbonAmount = (bet.amount * 2) / 100;
+            uint256 finalPayout = payout - lotteryAmount - carbonAmount;
 
             require(poolBalance >= payout, "Insufficient pool balance");
             poolBalance -= payout;
 
             require(lotteryContract != address(0), "Lottery not set");
             ILottery(lotteryContract).enterLottery{value: lotteryAmount}(user);
+
+            require(
+                carbonCreditContract != address(0),
+                "Carbon contract not set"
+            );
+            ICarbonCredit(carbonCreditContract).convertAndMint{
+                value: carbonAmount
+            }(user);
 
             (bool success, ) = payable(user).call{value: finalPayout}("");
             require(success, "ETH Transfer failed");
@@ -129,7 +145,9 @@ contract BTCBetting is AutomationCompatibleInterface {
     }
 
     // Chainlink Automation
-    function checkUpkeep(bytes calldata)
+    function checkUpkeep(
+        bytes calldata
+    )
         external
         view
         override
@@ -146,7 +164,10 @@ contract BTCBetting is AutomationCompatibleInterface {
     }
 
     function performUpkeep(bytes calldata performData) external override {
-        (address user, uint256 index) = abi.decode(performData, (address, uint256));
+        (address user, uint256 index) = abi.decode(
+            performData,
+            (address, uint256)
+        );
         betEnd(user);
         removeBettor(index);
     }
