@@ -66,7 +66,7 @@ export const BettingForm = () => {
       {/* Bet Now Button */}
       <button
         type="button"
-        className="w-full py-3 rounded-xl bg-[#2fffa0] text-black text-lg font-semibold shadow-md hover:bg-[#24d88a] transition-colors"
+        className="px-6 tracking-tight py-3 w-full text-sm rounded-full bg-gradient-to-b from-[#e6e6e6] via-[#c0c0c0] to-[#a0a0a0] text-black font-semibold shadow-inner shadow-white/80 border-b border-b-white/30 border-b-[1.5px] hover:from-[#f8f8f8] hover:to-[#b0b0b0] transition-colors relative overflow-hidden before:absolute before:inset-x-0 before:bottom-0 before:h-[2px] before:w-full before:bg-gradient-to-r before:from-white/80 before:via-white/40 before:to-transparent before:opacity-80 before:blur-[1.5px] before:rounded-b-full"
       >
         Bet now
       </button>

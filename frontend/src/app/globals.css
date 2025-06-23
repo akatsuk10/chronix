@@ -126,3 +126,27 @@
     @apply bg-background text-foreground;
   }
 }
+
+@keyframes shineRay {
+  0% {
+    opacity: 0.7;
+    filter: blur(8px);
+    left: 8%;
+    top: 40%;
+    transform: rotate(-8deg) scaleX(1);
+  }
+  60% {
+    opacity: 1;
+    filter: blur(4px);
+    left: 18%;
+    top: 36%;
+    transform: rotate(-6deg) scaleX(1.08);
+  }
+  100% {
+    opacity: 0.7;
+    filter: blur(8px);
+    left: 12%;
+    top: 38%;
+    transform: rotate(-8deg) scaleX(1);
+  }
+}
