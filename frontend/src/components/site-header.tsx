@@ -3,14 +3,15 @@ import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import Link from "next/link"
 import { Input } from "./ui/input"
+import NeumorphWrapper from "./ui/nuemorph-wrapper"
 
 export function SiteHeader() {
   return (
-    <header className="bg-stone-900 flex h-[70px] shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
+    <header className="flex bg-[#1c1c1c] h-[70px] shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
       <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6 text-white">
-        <div className="w-9 h-9 rounded-lg flex items-center justify-center border border-white/10 shadow-inner shadow-[#A3EC66]/30">
+        <NeumorphWrapper className="w-10 h-10 relative rounded-lg [box-shadow:0_0_10px_-1px_#00000040] border border-black/50 after:absolute after:content-[''] after:inset-0 after:rounded-lg after:border-t-2 after:border-r-2 after:border-[#2A2A2A] after:pointer-events-none bg-[#1c1c1c]">
           <img src="chronix.png" alt="" />
-        </div>
+        </NeumorphWrapper>
         <h1 className="text-lg font-medium tracking-tight">Chronix</h1>
         <div className="ml-10 flex items-center gap-8 text-sm">
           <Link href={"#"}>

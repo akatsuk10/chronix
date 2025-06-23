@@ -12,7 +12,7 @@ export const BettingForm = () => {
         {['Single Bet', 'Parlay', 'System'].map(tab => (
           <button
             key={tab}
-            className={`flex-1 py-2 text-sm rounded-full font-medium transition-colors ${selectedTab === tab ? 'bg-stone-800 text-white`' : 'bg-transparent text-gray-400'}`}
+            className={`flex-1 py-2 text-sm rounded-full font-medium transition-colors ${selectedTab === tab ? 'bg-[#1c1c1c] text-white`' : 'bg-transparent text-gray-400'}`}
             onClick={() => setSelectedTab(tab)}
             type="button"
           >
@@ -22,7 +22,7 @@ export const BettingForm = () => {
       </div>
 
       {/* Bet Details Card */}
-      <div className="bg-stone-800 border border-stone-800 rounded-lg p-4 mb-4">
+      <div className="bg-[#1c1c1c] z-100 border border-stone-800 rounded-lg p-4 mb-4">
         <div className="text-xs text-gray-400 mb-1">Arsenal x Real Madrid</div>
         <div className="border-b border-stone-700 mb-2"></div>
         <div className="flex items-center justify-between">

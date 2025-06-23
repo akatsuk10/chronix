@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/sidebar"
 
 import data from "./data.json"
+import NeumorphWrapper from "@/components/ui/nuemorph-wrapper";
 
 export default function Page() {
   return (
@@ -48,8 +49,10 @@ export default function Page() {
           </TabsContent>
         </Tabs>
       </main>
-      <div className="w-[26%] h-screen bg-stone-900 m-4 p-4 rounded-xl">
+      <div className="w-[26%] h-screen m-4">
+        <NeumorphWrapper className="p-4">
               <BettingForm />
+        </NeumorphWrapper>
             </div>
           </div>
         </div>
