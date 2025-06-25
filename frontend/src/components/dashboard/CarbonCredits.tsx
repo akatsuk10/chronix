@@ -1,7 +1,6 @@
 import React from 'react';
 
-export default function CarbonCredits()
- {
+const CarbonCredits = () => {
     return (
         <div>
             
@@ -9,3 +8,4 @@ export default function CarbonCredits()
     );
 }
 
+export default CarbonCredits;

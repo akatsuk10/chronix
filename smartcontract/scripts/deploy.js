@@ -28,10 +28,11 @@ async function main() {
   console.log("BTCBetting deployed at:", betting.address);
 
   // 4. Deploy Lottery with VRF config
-  const subscriptionId = 1; // Replace with your Chainlink VRF Plus subscription ID
+  const subscriptionId = hre.ethers.BigNumber.from("101394378300481048569531429903084182062350173979824139452347975085728304527293"); // Replace with your real Chainlink subscription ID
   const WEEK_IN_SECONDS = 7 * 24 * 60 * 60;
-  const VRF_COORDINATOR = "";
-  const KEY_HASH ="";
+  const VRF_COORDINATOR = "0x5c210ef41cd1a72de73bf76ec39637bb0d3d7bee";
+  const KEY_HASH = "0x354d2f95da55398f44b7cff77da56283d9c6c829a4bdf1bbcaf2ad6a4d081f61";
+
   const Lottery = await hre.ethers.getContractFactory("Lottery");
   const lottery = await Lottery.deploy(
     subscriptionId,
@@ -42,7 +43,7 @@ async function main() {
   await lottery.deployed();
   console.log("Lottery deployed at:", lottery.address);
 
-  // === Wiring the contracts ===
+  // === Wiring contracts together ===
   await carbon.setBettingContract(betting.address);
   console.log("CarbonCredit: bettingContract set");
 
@@ -52,16 +53,18 @@ async function main() {
   await betting.setCarbonContract(carbon.address);
   console.log("Betting: carbonContract set");
 
+  await betting.setVault(vault.address); // ✅ NEW
+  console.log("Betting: vaultContract set");
+
   await lottery.setBettingContract(betting.address);
   console.log("Lottery: bettingContract set");
 
-  // ✅ Done
+  // ✅ Final output
   console.log("\n✅ Deployment complete!");
-  console.log("\nContracts:");
-  console.log("Vault:", vault.address);
-  console.log("CarbonCredit:", carbon.address);
-  console.log("BTCBetting:", betting.address);
-  console.log("Lottery:", lottery.address);
+  console.log("vault:", vault.address);
+  console.log("carbonCredit:", carbon.address);
+  console.log("betting:", betting.address);
+  console.log("lottery:", lottery.address);
 }
 
 main().catch((error) => {

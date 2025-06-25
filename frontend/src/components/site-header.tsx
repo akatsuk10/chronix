@@ -3,6 +3,7 @@ import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import Link from "next/link"
 import { Input } from "./ui/input"
+import { ConnectButton } from "./wallet/ConnectButton"
 import NeumorphWrapper from "./ui/nuemorph-wrapper"
 
 export function SiteHeader() {
@@ -25,6 +26,14 @@ export function SiteHeader() {
           </Link>
         </div>
         <div className="ml-auto flex items-center gap-2">
+        <div className="mr-3">
+          <Input className="border border-stone-600 bg-stone-950 h-[50px]" placeholder="Search for teams"/>
+        </div>
+       <div className="bg-[#44FDB3] rounded-full">
+
+        <ConnectButton/>
+       </div>
+      
         <button
         type="button"
         className="px-6 tracking-tight py-3 text-sm rounded-full bg-gradient-to-b from-[#e6e6e6] via-[#c0c0c0] to-[#a0a0a0] text-black font-semibold shadow-inner shadow-white/80 border-b border-b-white/30 border-b-[1.5px] hover:from-[#f8f8f8] hover:to-[#b0b0b0] transition-colors relative overflow-hidden before:absolute before:inset-x-0 before:bottom-0 before:h-[2px] before:w-full before:bg-gradient-to-r before:from-white/80 before:via-white/40 before:to-transparent before:opacity-80 before:blur-[1.5px] before:rounded-b-full"

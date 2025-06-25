@@ -10,8 +10,7 @@ export async function login(walletAddress: string, signature: string) {
   });
 
   if (!response.ok) throw new Error("Authentication failed");
-  console.log(response)
-  return response.json(); // Could be { message } or { accessToken, refreshToken }
+    return response.json(); // Could be { message } or { accessToken, refreshToken }
 }
 
 
@@ -28,6 +27,13 @@ export async function verifySignature(walletAddress: string, signature: string) 
 export async function signMessage(message: string, signer: ethers.Signer) {
   return signer.signMessage(message);
 }
+
+// Checks Logic on logged In or not
+export function isLoggedIn() {
+  return !!localStorage.getItem('accessToken'); // true if access token exists
+}
+
+
 
 // Store tokens in localStorage
 export function storeTokens(accessToken: string, refreshToken: string) {

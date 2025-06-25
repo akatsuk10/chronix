@@ -132,35 +132,7 @@ export const refresh = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
-export const getNonce = async (req: Request, res: Response): Promise<void> => {
-  const { walletAddress } = req.query;
 
-  if (!walletAddress || typeof walletAddress !== 'string') {
-    res.status(400).json({ error: "Missing or invalid wallet address" });
-    return;
-  }
-
-  try {
-    // Generate a random 16-byte hex nonce
-    const nonce = crypto.randomBytes(16).toString('hex');
-    const message = `Sign this message to authenticate: ${nonce}`;
-
-    // Upsert user with the new nonce
-    await prisma.user.upsert({
-      where: { walletAddress: walletAddress.toLowerCase() },
-      update: { nonce },
-      create: {
-        walletAddress: walletAddress.toLowerCase(),
-        nonce
-      }
-    });
-
-    res.json({ message });
-  } catch (error) {
-    console.error('Nonce generation error:', error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-};
 
 export const verifyWalletSignature = async (req: Request, res: Response): Promise<void> => {
   const { walletAddress, signature } = req.body;

@@ -12,10 +12,13 @@ interface ICarbonCredit {
     function convertAndMint(address user) external payable;
 }
 
-contract BTCBetting is AutomationCompatibleInterface {
+contract VaultBetting is AutomationCompatibleInterface {
     AggregatorV3Interface public immutable btcPriceFeed;
 
     address public owner;
+    address public lotteryContract;
+    address public carbonCreditContract;
+
     uint256 public poolBalance;
 
     struct Bet {
@@ -28,23 +31,13 @@ contract BTCBetting is AutomationCompatibleInterface {
 
     mapping(address => Bet) public bets;
     address[] public activeBettors;
-    address public lotteryContract;
-    address public carbonCreditContract;
+    mapping(address => uint256) public avaxVaultBalances;
 
-    event BetPlaced(
-        address indexed user,
-        uint8 position,
-        uint256 amount,
-        int256 startPrice
-    );
-    event BetSettled(
-        address indexed user,
-        bool won,
-        uint256 payout,
-        string result,
-        int256 startPrice,
-        int256 endPrice
-    );
+    // Events
+    event AVAXDeposited(address indexed user, uint256 amount);
+    event AVAXWithdrawn(address indexed user, uint256 amount);
+    event BetPlaced(address indexed user, uint8 position, uint256 amount, int256 startPrice);
+    event BetSettled(address indexed user, bool won, uint256 payout, string result, int256 startPrice, int256 endPrice);
     event PoolFunded(address indexed funder, uint256 amount);
     event PoolWithdrawn(address indexed admin, uint256 amount);
 
@@ -53,59 +46,76 @@ contract BTCBetting is AutomationCompatibleInterface {
         _;
     }
 
-    constructor(address _btcPriceAddress) {
-        btcPriceFeed = AggregatorV3Interface(_btcPriceAddress);
+    constructor(address _btcPriceFeed) {
+        btcPriceFeed = AggregatorV3Interface(_btcPriceFeed);
         owner = msg.sender;
     }
 
-    function setCarbonContract(address _carbon) external onlyOwner {
-        require(_carbon != address(0), "Invalid address");
-        carbonCreditContract = _carbon;
-    }
+    // --- Admin Setup ---
 
     function setLotteryContract(address _lottery) external onlyOwner {
-        require(_lottery != address(0), "Invalid address");
+        require(_lottery != address(0), "Invalid lottery address");
         lotteryContract = _lottery;
     }
 
-    function placeBetFor(address user, uint8 _position) public payable {
-        require(_position == 0 || _position == 1, "Invalid position");
-        require(msg.value > 0, "Bet must be positive");
-        require(
-            bets[user].amount == 0 || bets[user].settled,
-            "Existing active bet"
-        );
+    function setCarbonContract(address _carbon) external onlyOwner {
+        require(_carbon != address(0), "Invalid carbon contract");
+        carbonCreditContract = _carbon;
+    }
+
+    // --- Vault Functions ---
+
+    function depositAVAX() external payable {
+        require(msg.value > 0, "Zero AVAX");
+        avaxVaultBalances[msg.sender] += msg.value;
+        emit AVAXDeposited(msg.sender, msg.value);
+    }
+
+    function withdrawAVAX(uint256 amount) external {
+        require(avaxVaultBalances[msg.sender] >= amount, "Insufficient vault balance");
+        avaxVaultBalances[msg.sender] -= amount;
+        payable(msg.sender).transfer(amount);
+        emit AVAXWithdrawn(msg.sender, amount);
+    }
+
+    function getVaultBalance(address user) external view returns (uint256) {
+        return avaxVaultBalances[user];
+    }
+
+    // --- Betting Functions ---
+
+    function placeBet(uint8 position, uint256 amount) external {
+        require(position == 0 || position == 1, "Invalid position");
+        require(amount > 0, "Zero amount");
+        require(avaxVaultBalances[msg.sender] >= amount, "Vault: insufficient balance");
+        require(bets[msg.sender].amount == 0 || bets[msg.sender].settled, "Active bet exists");
 
         (, int256 startPrice, , , ) = btcPriceFeed.latestRoundData();
 
-        poolBalance += msg.value;
+        avaxVaultBalances[msg.sender] -= amount;
+        poolBalance += amount;
 
-        bets[user] = Bet({
-            amount: msg.value,
+        bets[msg.sender] = Bet({
+            amount: amount,
             startTime: block.timestamp,
             startPrice: startPrice,
-            position: _position,
+            position: position,
             settled: false
         });
 
-        activeBettors.push(user);
-
-        emit BetPlaced(user, _position, msg.value, startPrice);
-    }
-
-    function placeBet(uint8 _position) external payable {
-        placeBetFor(msg.sender, _position);
+        activeBettors.push(msg.sender);
+        emit BetPlaced(msg.sender, position, amount, startPrice);
     }
 
     function betEnd(address user) public {
         Bet storage bet = bets[user];
         require(!bet.settled, "Already settled");
-        require(block.timestamp >= bet.startTime + 299, "Too early to settle");
+        require(block.timestamp >= bet.startTime + 299, "Too early");
 
         (, int256 endPrice, , , ) = btcPriceFeed.latestRoundData();
 
         bool won = (bet.position == 0 && endPrice > bet.startPrice) ||
-            (bet.position == 1 && endPrice < bet.startPrice);
+                   (bet.position == 1 && endPrice < bet.startPrice);
         bool draw = (endPrice == bet.startPrice);
 
         uint256 payout = won ? bet.amount * 2 : (draw ? bet.amount : 0);
@@ -116,43 +126,28 @@ contract BTCBetting is AutomationCompatibleInterface {
             uint256 carbonAmount = (bet.amount * 2) / 100;
             uint256 finalPayout = payout - lotteryAmount - carbonAmount;
 
-            require(poolBalance >= payout, "Insufficient pool balance");
+            require(poolBalance >= payout, "Insufficient pool");
+
             poolBalance -= payout;
 
-            require(lotteryContract != address(0), "Lottery not set");
-            ILottery(lotteryContract).enterLottery{value: lotteryAmount}(user);
+            if (lotteryContract != address(0)) {
+                ILottery(lotteryContract).enterLottery{value: lotteryAmount}(user);
+            }
 
-            require(
-                carbonCreditContract != address(0),
-                "Carbon contract not set"
-            );
-            ICarbonCredit(carbonCreditContract).convertAndMint{
-                value: carbonAmount
-            }(user);
+            if (carbonCreditContract != address(0)) {
+                ICarbonCredit(carbonCreditContract).convertAndMint{value: carbonAmount}(user);
+            }
 
             (bool success, ) = payable(user).call{value: finalPayout}("");
-            require(success, "ETH Transfer failed");
+            require(success, "Transfer failed");
         }
 
-        emit BetSettled(
-            user,
-            won,
-            payout,
-            won ? "Won" : (draw ? "Draw" : "Lost"),
-            bet.startPrice,
-            endPrice
-        );
+        emit BetSettled(user, won, payout, won ? "Won" : (draw ? "Draw" : "Lost"), bet.startPrice, endPrice);
     }
 
-    // Chainlink Automation
-    function checkUpkeep(
-        bytes calldata
-    )
-        external
-        view
-        override
-        returns (bool upkeepNeeded, bytes memory performData)
-    {
+    // --- Chainlink Automation ---
+
+    function checkUpkeep(bytes calldata) external view override returns (bool, bytes memory) {
         for (uint256 i = 0; i < activeBettors.length; i++) {
             address user = activeBettors[i];
             Bet storage bet = bets[user];
@@ -164,10 +159,7 @@ contract BTCBetting is AutomationCompatibleInterface {
     }
 
     function performUpkeep(bytes calldata performData) external override {
-        (address user, uint256 index) = abi.decode(
-            performData,
-            (address, uint256)
-        );
+        (address user, uint256 index) = abi.decode(performData, (address, uint256));
         betEnd(user);
         removeBettor(index);
     }
@@ -178,15 +170,16 @@ contract BTCBetting is AutomationCompatibleInterface {
         activeBettors.pop();
     }
 
-    // Pool funding
+    // --- Pool Management ---
+
     function fundPool() external payable {
-        require(msg.value > 0, "No funds sent");
+        require(msg.value > 0, "No ETH sent");
         poolBalance += msg.value;
         emit PoolFunded(msg.sender, msg.value);
     }
 
     function withdrawPool(uint256 amount) external onlyOwner {
-        require(amount <= poolBalance, "Amount exceeds pool balance");
+        require(amount <= poolBalance, "Exceeds pool balance");
         poolBalance -= amount;
         payable(owner).transfer(amount);
         emit PoolWithdrawn(msg.sender, amount);
@@ -197,7 +190,8 @@ contract BTCBetting is AutomationCompatibleInterface {
         emit PoolFunded(msg.sender, msg.value);
     }
 
-    // View helpers
+    // --- View ---
+
     function getActiveBettors() external view returns (address[] memory) {
         return activeBettors;
     }

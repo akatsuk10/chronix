@@ -3,7 +3,6 @@
 import { ActionButtonList } from "@/components/wallet/ActionButtonList";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
 import { InfoList } from "@/components/wallet/InfoList";
-import { AuthTest } from "@/components/auth/AuthTest";
 
 export default function Home() {
   return (
@@ -14,7 +13,6 @@ export default function Home() {
           <ConnectButton />
         </div>
         <div>
-          <AuthTest />
         </div>
         <div>
           <ActionButtonList />

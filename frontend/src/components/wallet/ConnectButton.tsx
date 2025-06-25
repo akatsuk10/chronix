@@ -4,28 +4,31 @@ import { useAppKitAccount } from "@reown/appkit/react";
 import { useSignMessage } from "wagmi";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { login, verifySignature, storeTokens } from "@/lib/auth";
+import { login, verifySignature, storeTokens, isLoggedIn } from "@/lib/auth";
+import { useDispatch, useSelector } from "react-redux";
+import { RootState } from "@/store";
+import { setAuthenticated, setAddress, setConnected, setChainId } from "@/store/slices/walletSlice";
 
 export const ConnectButton = () => {
   const { address, isConnected } = useAppKitAccount();
   const { signMessageAsync } = useSignMessage();
   const router = useRouter();
+  const dispatch = useDispatch();
+
+  const isAuthenticated = useSelector((state: RootState) => state.wallet.isAuthenticated);
 
   useEffect(() => {
     const handleAuth = async () => {
       if (!address) return;
 
       try {
-        // 1️⃣ Initial dummy signature → required by backend for login
         const initialSignature = await signMessageAsync({
           message: "Initial authentication attempt",
         });
 
-        // 2️⃣ Call login API → backend will return either { message } or tokens
         const result = await login(address, initialSignature);
 
         if (result.message) {
-          // 3️⃣ If nonce returned → sign it
           const nonceSignature = await signMessageAsync({
             message: result.message,
           });
@@ -38,17 +41,26 @@ export const ConnectButton = () => {
           throw new Error("Unexpected response from server");
         }
 
-        // ✅ Redirect after successful login
+        dispatch(setAuthenticated(true)); // ✅ Set Redux authenticated
+        dispatch(setAddress(address ?? null));
+        dispatch(setConnected(!!isConnected));
+        dispatch(setChainId(null));
         router.push("/dashboard");
       } catch (error) {
         console.error("Authentication failed:", error);
       }
     };
 
-    if (isConnected) {
+    // ✅ Skip if already authenticated (from tokens in localStorage or Redux)
+    if (isConnected && !isAuthenticated && !isLoggedIn()) {
       handleAuth();
+    } else if (isLoggedIn()) {
+      dispatch(setAuthenticated(true)); // Already logged in → just update Redux
+      dispatch(setAddress(address ?? null));
+      dispatch(setConnected(!!isConnected));
+      dispatch(setChainId(null));
     }
-  }, [isConnected, address, signMessageAsync, router]);
+  }, [isConnected, address, isAuthenticated, dispatch, router, signMessageAsync]);
 
-  return <appkit-button />;
+  return <appkit-button label="connect wallet" balance="hide"  />;
 };

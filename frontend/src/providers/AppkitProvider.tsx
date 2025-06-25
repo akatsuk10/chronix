@@ -23,14 +23,18 @@ export const modal = createAppKit({
   projectId,
   networks,
   metadata,
-  themeMode: 'light',
+  themeMode: 'dark',  // or dynamically toggle
   features: {
-    analytics: true // Optional - defaults to your Cloud configuration
+    analytics: true,
+    socials:[],
+    email:false
   },
   themeVariables: {
-    '--w3m-accent': '#000000',
-  }
-})
+    "--w3m-accent": "#24d88a",
+    "--w3m-color-mix": "#000000",
+    "--w3m-color-mix-strength": 100, // pushes background fully to black
+  },
+});
 
 function ContextProvider({ children }: { children: ReactNode }) {
   return (

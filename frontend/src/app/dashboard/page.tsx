@@ -4,6 +4,7 @@ import { BettingForm } from "@/components/dashboard/BettingForm";
 import { TradingViewWidget } from "@/components/dashboard/TradingWidgetBTC";
 import { TradingViewWidgetETH } from "@/components/dashboard/TradingWidgetETH";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import  Deposit  from "@/components/deposit/Deposit"
 
 import {
   SidebarInset,
@@ -48,6 +49,7 @@ export default function Page() {
             </div>
           </TabsContent>
         </Tabs>
+        <Deposit/>
       </main>
       <div className="w-[26%] h-screen m-4">
         <NeumorphWrapper className="p-4">

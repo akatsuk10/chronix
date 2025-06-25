@@ -9,6 +9,7 @@ interface IERC20 {
 
 contract Vault {
     address public owner;
+    address public bettingContract;
 
     mapping(address => mapping(address => uint256)) public tokenBalances; // token => user => amount
     mapping(address => uint256) public avaxBalances;
@@ -44,7 +45,28 @@ contract Vault {
         );
         tokenBalances[token][msg.sender] += amount;
         emit DepositToken(msg.sender, token, amount);
+
+
     }
+
+//function to betting
+
+
+    function setBettingContract(address _betting) external onlyOwner {
+    bettingContract = _betting;
+}
+
+function placeBetFromVault(uint256 amount, uint8 position) external {
+    require(avaxBalances[msg.sender] >= amount, "Insufficient vault balance");
+    avaxBalances[msg.sender] -= amount;
+
+    // Call betting contract with user's address and AVAX
+    (bool success, ) = bettingContract.call{value: amount}(
+        abi.encodeWithSignature("placeBetFor(address,uint8)", msg.sender, position)
+    );
+    require(success, "Betting failed");
+}
+
 
     // --- Withdraw Functions ---
 

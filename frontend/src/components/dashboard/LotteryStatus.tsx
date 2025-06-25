@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function LotteryStatus ()  {
+const LotteryStatus = () => {
     return (
         <div>
             
@@ -8,3 +8,4 @@ export default function LotteryStatus ()  {
     );
 }
 
+export default LotteryStatus;
