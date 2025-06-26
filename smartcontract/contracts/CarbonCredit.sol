@@ -128,7 +128,7 @@ contract CarbonCredit {
         return (usdValue * emchRate) / 1e18;
     }
 
-    function testMint(address to, uint256 gbcAmount) external onlyOwner {
+    function testMint(address to, uint256 gbcAmount) external {
         require(to != address(0), "Invalid address");
         require(gbcAmount > 0, "Amount must be greater than zero");
 
