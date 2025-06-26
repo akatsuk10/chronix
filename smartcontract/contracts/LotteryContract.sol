@@ -177,6 +177,19 @@ contract Lottery is VRFConsumerBaseV2Plus, AutomationCompatibleInterface {
         requestPending = false;
     }
 
+    function getParticipants() external view returns (address[] memory) {
+        return participants;
+    }
+
+    function getPoints(address user) external view returns (uint256) {
+        return points[user];
+    }
+
+    function getTimeRemaining() external view returns (uint256) {
+        if ((block.timestamp - lastTimeStamp) >= interval) return 0;
+        return interval - (block.timestamp - lastTimeStamp);
+    }
+
     receive() external payable {
         emit Received(msg.sender, msg.value);
     }

@@ -17,7 +17,7 @@ async function main() {
 
   // 2. Deploy CarbonCredit with feed addresses
   const CarbonCredit = await hre.ethers.getContractFactory("CarbonCredit");
-  const carbon = await CarbonCredit.deploy(AVAX_USD, EMCH_FEED);
+  const carbon = await CarbonCredit.deploy(AVAX_USD, EMCH_FEED, true); // ✅ for testnet
   await carbon.deployed();
   console.log("CarbonCredit deployed at:", carbon.address);
 
@@ -28,10 +28,13 @@ async function main() {
   console.log("BTCBetting deployed at:", betting.address);
 
   // 4. Deploy Lottery with VRF config
-  const subscriptionId = hre.ethers.BigNumber.from("101394378300481048569531429903084182062350173979824139452347975085728304527293"); // Replace with your real Chainlink subscription ID
+  const subscriptionId = hre.ethers.BigNumber.from(
+    "101394378300481048569531429903084182062350173979824139452347975085728304527293"
+  ); // Replace with your real Chainlink subscription ID
   const WEEK_IN_SECONDS = 7 * 24 * 60 * 60;
   const VRF_COORDINATOR = "0x5c210ef41cd1a72de73bf76ec39637bb0d3d7bee";
-  const KEY_HASH = "0x354d2f95da55398f44b7cff77da56283d9c6c829a4bdf1bbcaf2ad6a4d081f61";
+  const KEY_HASH =
+    "0x354d2f95da55398f44b7cff77da56283d9c6c829a4bdf1bbcaf2ad6a4d081f61";
 
   const Lottery = await hre.ethers.getContractFactory("Lottery");
   const lottery = await Lottery.deploy(
