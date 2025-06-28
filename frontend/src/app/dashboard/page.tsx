@@ -49,9 +49,8 @@ export default function Page() {
             </div>
           </TabsContent>
         </Tabs>
-        <Deposit/>
       </main>
-      <div className="w-[26%] h-screen m-4">
+      <div className="w-[26%] h-90vh m-4">
         <NeumorphWrapper className="p-4">
               <BettingForm />
         </NeumorphWrapper>

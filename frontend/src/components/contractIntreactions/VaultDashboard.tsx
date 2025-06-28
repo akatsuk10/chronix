@@ -18,7 +18,7 @@ export default function VaultDashboard() {
     if (!address || !window.ethereum) return;
     try {
       const provider = new ethers.providers.Web3Provider(window.ethereum as any);
-      const vault = new ethers.Contract(CONTRACTS.vaultBetting, bettingABI.abi, provider);
+      const vault = new ethers.Contract(CONTRACTS.vault, bettingABI.abi, provider);
       const userBalance = await vault.getAVAXBalance(address);
       setBalance(ethers.utils.formatEther(userBalance));
       setTotalDeposits("1,234.56"); // optional mock
@@ -34,7 +34,7 @@ export default function VaultDashboard() {
     try {
       const provider = new ethers.providers.Web3Provider(window.ethereum as any);
       const signer = provider.getSigner();
-      const vault = new ethers.Contract(CONTRACTS.vaultBetting, bettingABI.abi, signer);
+      const vault = new ethers.Contract(CONTRACTS.vault, bettingABI.abi, signer);
 
       const tx = await vault.depositAVAX({
         value: ethers.utils.parseEther(amount),
