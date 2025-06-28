@@ -33,6 +33,7 @@ export default function Dashboard() {
   const [vaultBettingContract, setVaultBettingContract] = useState<string>('');
   const [poolBalance, setPoolBalance] = useState<string>('0');
   const [userActiveBet, setUserActiveBet] = useState<any>(null);
+  const [vaultWithdrawAmount, setVaultWithdrawAmount] = useState('');
 
   useEffect(() => {
     const initProvider = async () => {
@@ -125,27 +126,38 @@ export default function Dashboard() {
       setError('Please enter a valid amount');
       return;
     }
-
     setIsLoading(true);
     setError('');
-
     try {
-      console.log('Depositing to vault:', vaultDepositAmount, 'AVAX');
       const vault = new ethers.Contract(CONTRACTS.vault, VaultABI.abi, signer);
-      const tx = await vault.depositAVAX({ 
-        value: ethers.utils.parseEther(vaultDepositAmount) 
-      });
-      
-      console.log('Transaction sent:', tx.hash);
+      const tx = await vault.depositAVAX({ value: ethers.utils.parseEther(vaultDepositAmount) });
       await tx.wait();
-      console.log('Transaction confirmed');
-      
       setVaultDepositAmount('');
       await fetchBalances();
       alert('Successfully deposited to vault!');
     } catch (err: any) {
-      console.error('Deposit error:', err);
       setError(err.message || 'Failed to deposit to vault');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const withdrawFromVault = async () => {
+    if (!signer || !vaultWithdrawAmount || parseFloat(vaultWithdrawAmount) <= 0) {
+      setError('Please enter a valid amount to withdraw');
+      return;
+    }
+    setIsLoading(true);
+    setError('');
+    try {
+      const vault = new ethers.Contract(CONTRACTS.vault, VaultABI.abi, signer);
+      const tx = await vault.withdrawAVAX(ethers.utils.parseEther(vaultWithdrawAmount));
+      await tx.wait();
+      setVaultWithdrawAmount('');
+      await fetchBalances();
+      alert('Successfully withdrew from vault!');
+    } catch (err: any) {
+      setError(err.message || 'Failed to withdraw from vault');
     } finally {
       setIsLoading(false);
     }
@@ -283,90 +295,57 @@ export default function Dashboard() {
       setError('Please wait for the current round to end');
       return;
     }
-
     if (!signer || !betAmount || parseFloat(betAmount) <= 0) {
       setError('Please enter a valid bet amount');
       return;
     }
-
     if (parseFloat(betAmount) > parseFloat(vaultBalance)) {
       setError('Insufficient vault balance');
       return;
     }
-
     setIsLoading(true);
     setError('');
-
     try {
-      // Check vault configuration first
+      // Check vault config, user balance, active bet, pool balance
       await checkVaultConfiguration();
-      
-      // Check user's actual vault balance
       const userVaultBalance = await checkUserVaultBalance();
       const betAmountWei = ethers.utils.parseEther(betAmount);
-      
       if (userVaultBalance.lt(betAmountWei)) {
         setError(`Insufficient vault balance. You have ${ethers.utils.formatEther(userVaultBalance)} AVAX but trying to bet ${betAmount} AVAX`);
         setIsLoading(false);
         return;
       }
-
-      // Check if user has an active bet
       const activeBet = await checkUserActiveBet();
       if (activeBet && activeBet.amount && activeBet.amount.toString() !== '0' && !activeBet.settled) {
         setError(`You already have an active bet of ${ethers.utils.formatEther(activeBet.amount)} AVAX. Please wait for it to be settled.`);
         setIsLoading(false);
         return;
       }
-
-      // Check pool balance
       const poolBal = await checkPoolBalance();
       if (poolBal.lt(betAmountWei)) {
         setError(`Insufficient pool balance. Pool has ${ethers.utils.formatEther(poolBal)} AVAX but you're trying to bet ${betAmount} AVAX`);
         setIsLoading(false);
         return;
       }
-
-      // Corrected: Use BTCBetting contract's placeBetFor
+      // Place bet
       const betting = new ethers.Contract(CONTRACTS.betting, BTCBettingABI.abi, signer);
       const userAddress = wallet.address || connectedAddress;
-      
-      console.log('Placing bet with params:', {
-        user: userAddress,
-        position: position,
-        amount: ethers.utils.formatEther(betAmountWei),
-        vaultBalance: ethers.utils.formatEther(userVaultBalance),
-        poolBalance: ethers.utils.formatEther(poolBal)
-      });
-      
-      const tx = await betting.placeBetFor(
-        userAddress,
-        position,
-        betAmountWei,
-        { gasLimit: 500000 }
-      );
-      
-      console.log('Transaction sent:', tx.hash);
+      const tx = await betting.placeBetFor(userAddress, position, betAmountWei, { gasLimit: 500000 });
       await tx.wait();
-      console.log('Transaction confirmed');
-      
       setBetAmount('');
       setTimeLeft(BET_TIMEOUT);
       await fetchBalances();
       alert(`Bet placed successfully! Position: ${position === 0 ? 'Long' : 'Short'}`);
     } catch (err: any) {
-      console.error('Betting error:', err);
-      
-      // Provide more specific error messages
-      if (err.message.includes("Active bet exists")) {
+      if (err.message.includes('Active bet exists')) {
         setError('You already have an active bet. Please wait for it to be settled.');
-      } else if (err.message.includes("Insufficient Vault balance")) {
+      } else if (err.message.includes('Insufficient Vault balance')) {
         setError('Insufficient balance in your vault. Please deposit more AVAX.');
-      } else if (err.message.includes("Insufficient pool")) {
+      } else if (err.message.includes('Insufficient pool')) {
         setError('Insufficient pool balance. The betting pool needs more funds.');
-      } else if (err.message.includes("Invalid position")) {
+      } else if (err.message.includes('Invalid position')) {
         setError('Invalid position. Use 0 for Long or 1 for Short.');
-      } else if (err.message.includes("Amount zero")) {
+      } else if (err.message.includes('Amount zero')) {
         setError('Bet amount must be greater than 0.');
       } else {
         setError(err.message || 'Failed to place bet');
@@ -391,7 +370,6 @@ export default function Dashboard() {
       await fetchBalances();
       alert('Betting pool funded!');
     } catch (err: any) {
-      console.error('Fund pool error:', err);
       setError(err.message || 'Failed to fund betting pool');
     } finally {
       setIsLoading(false);
@@ -441,6 +419,8 @@ export default function Dashboard() {
             <div><span className="text-gray-300">Position:</span> <span className="font-bold">{activeBet.position === 0 ? 'Long' : 'Short'}</span></div>
             <div><span className="text-gray-300">Start Time:</span> <span className="font-bold">{activeBet.startTime ? new Date(Number(activeBet.startTime) * 1000).toLocaleString() : '-'}</span></div>
             <div><span className="text-gray-300">Settled:</span> <span className="font-bold">{activeBet.settled ? 'Yes' : 'No'}</span></div>
+            <div><span className="text-gray-300">Start Price:</span> <span className="font-bold">{activeBet.startPrice ? `$${(Number(activeBet.startPrice) / 100000000).toFixed(2)}` : '-'}</span></div>
+            <div><span className="text-gray-300">End Price:</span> <span className="font-bold">{activeBet.endPrice ? `$${(Number(activeBet.endPrice) / 100000000).toFixed(2)}` : '-'}</span></div>
           </div>
         ) : (
           <div className="text-gray-400">No active bet found.</div>
@@ -702,6 +682,29 @@ export default function Dashboard() {
           >
             Check Active Bet
           </button>
+        </div>
+
+        {/* Vault Withdraw Section */}
+        <div className="bg-gray-800 p-6 rounded shadow">
+          <h2 className="text-xl mb-4 font-semibold">Withdraw from Vault</h2>
+          <div className="space-y-4">
+            <input
+              className="p-3 bg-gray-700 rounded w-full border border-gray-600 focus:border-blue-500 focus:outline-none"
+              placeholder="Amount in AVAX"
+              value={vaultWithdrawAmount}
+              onChange={(e) => setVaultWithdrawAmount(e.target.value)}
+              type="number"
+              step="0.01"
+              min="0"
+            />
+            <button
+              className={`w-full px-4 py-3 rounded font-medium ${isLoading ? 'bg-gray-600 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'}`}
+              onClick={withdrawFromVault}
+              disabled={isLoading}
+            >
+              {isLoading ? 'Processing...' : 'Withdraw from Vault'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

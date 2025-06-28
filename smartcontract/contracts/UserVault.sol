@@ -11,20 +11,19 @@ contract Vault {
     address public owner;
     address public bettingContract;
 
-    mapping(address => mapping(address => uint256)) public tokenBalances; // token => user => amount
+    mapping(address => mapping(address => uint256)) public tokenBalances;
     mapping(address => uint256) public avaxBalances;
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "Not the owner");
+        require(msg.sender == owner, "Not owner");
         _;
     }
 
     modifier onlyBettingContract() {
-        require(msg.sender == bettingContract, "Only betting contract can call");
+        require(msg.sender == bettingContract, "Only betting contract");
         _;
     }
 
-    // Events
     event DepositAVAX(address indexed user, uint256 amount);
     event WithdrawAVAX(address indexed user, uint256 amount);
     event DepositToken(address indexed user, address indexed token, uint256 amount);
@@ -34,55 +33,46 @@ contract Vault {
         owner = msg.sender;
     }
 
-    // --- Config ---
-
     function setBettingContract(address _betting) external onlyOwner {
         bettingContract = _betting;
     }
 
-    // --- Deposit Functions ---
-
     function depositAVAX() external payable {
-        require(msg.value > 0, "No AVAX sent");
+        require(msg.value > 0, "No AVAX");
         avaxBalances[msg.sender] += msg.value;
         emit DepositAVAX(msg.sender, msg.value);
     }
 
     function depositToken(address token, uint256 amount) external {
-        require(amount > 0, "Amount must be > 0");
+        require(amount > 0, "Amount >0");
         require(
             IERC20(token).transferFrom(msg.sender, address(this), amount),
-            "Token transfer failed"
+            "Transfer failed"
         );
         tokenBalances[token][msg.sender] += amount;
         emit DepositToken(msg.sender, token, amount);
     }
 
-    // --- Withdraw Functions ---
-
     function withdrawAVAX(uint256 amount) external {
-        require(avaxBalances[msg.sender] >= amount, "Insufficient AVAX balance");
+        require(avaxBalances[msg.sender] >= amount, "Insufficient AVAX");
         avaxBalances[msg.sender] -= amount;
         payable(msg.sender).transfer(amount);
         emit WithdrawAVAX(msg.sender, amount);
     }
 
     function withdrawToken(address token, uint256 amount) external {
-        require(tokenBalances[token][msg.sender] >= amount, "Insufficient token balance");
+        require(tokenBalances[token][msg.sender] >= amount, "Insufficient token");
         tokenBalances[token][msg.sender] -= amount;
-        require(IERC20(token).transfer(msg.sender, amount), "Token transfer failed");
+        require(IERC20(token).transfer(msg.sender, amount), "Transfer failed");
         emit WithdrawToken(msg.sender, token, amount);
     }
 
-    // --- Called by BTCBetting to Deduct Bet ---
-
     function deductForBet(address user, uint256 amount) external onlyBettingContract {
-        require(avaxBalances[user] >= amount, "Insufficient Vault balance");
+        require(avaxBalances[user] >= amount, "Insufficient balance");
         avaxBalances[user] -= amount;
-        // funds stay in Vault, BTCBetting updates poolBalance on its side
+      (bool sent, ) = payable(bettingContract).call{value: amount}("");
+    require(sent, "Transfer to betting contract failed"); // Funds transferred to betting contract
     }
-
-    // --- View Functions ---
 
     function getTokenBalance(address token, address user) external view returns (uint256) {
         return tokenBalances[token][user];
@@ -91,8 +81,6 @@ contract Vault {
     function getAVAXBalance(address user) external view returns (uint256) {
         return avaxBalances[user];
     }
-
-    // --- Fallback for direct AVAX transfers ---
 
     receive() external payable {
         avaxBalances[msg.sender] += msg.value;

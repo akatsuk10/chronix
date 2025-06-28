@@ -44,11 +44,13 @@ contract BTCBetting is AutomationCompatibleInterface, FunctionsClient, Confirmed
         "headers: { 'Content-Type': 'application/json' },"
         "data: { secret: 'supersecretcode123' }"
         "});"
-        "if (response.error) throw Error('API failed');"
+        "console.log('API response:', JSON.stringify(response))"
+        "if (response.error || !response.data || typeof response.data.report === 'undefined') {"
+  "throw Error('API failed: ' + JSON.stringify(response));}"
         "const price = response.data.report;"
         "return Functions.encodeString(price.toString());";
 
-    bytes32 private constant DON_ID = 0x66756e2d6176616c616e6368652d66756a692d31000000000000000000000000; // Sepolia
+    bytes32 private constant DON_ID = 0x66756e2d6176616c616e6368652d66756a692d31000000000000000000000000;
     uint32 private constant GAS_LIMIT = 300_000;
 
     bytes32 public lastRequestId;
@@ -60,20 +62,24 @@ contract BTCBetting is AutomationCompatibleInterface, FunctionsClient, Confirmed
 
     constructor() FunctionsClient(ROUTER) ConfirmedOwner(msg.sender) {}
 
-    // Config
-    function setVault(address _vault) external onlyOwner { vault = _vault; }
-    function setLotteryContract(address _lottery) external onlyOwner { lotteryContract = _lottery; }
-    function setCarbonContract(address _carbon) external onlyOwner { carbonCreditContract = _carbon; }
+    // Initialize all contracts at once
+    function initializeContracts(
+        address _vault,
+        address _lottery,
+        address _carbon
+    ) external onlyOwner {
+        vault = _vault;
+        lotteryContract = _lottery;
+        carbonCreditContract = _carbon;
+    }
 
-    // 🔁 Bet Placement — pull from Vault instead of msg.value
     function placeBetFor(address user, uint8 position, uint256 amount) external {
         require(position <= 1, "Invalid position");
         require(amount > 0, "Amount zero");
         require(bets[user].amount == 0 || bets[user].settled, "Active bet exists");
+        require(vault != address(0), "Vault not set");
 
-        IVault(vault).deductForBet(user, amount); // <-- pull funds from vault
-        poolBalance += amount;
-
+        IVault(vault).deductForBet(user, amount); // Transfers AVAX to this contract
         bets[user] = Bet({
             amount: amount,
             startTime: block.timestamp,
@@ -85,11 +91,9 @@ contract BTCBetting is AutomationCompatibleInterface, FunctionsClient, Confirmed
 
         activeBettors.push(user);
         emit BetPlaced(user, position, amount);
-
         _requestPrice(user, PriceType.START);
     }
 
-    // 🏁 End bet
     function betEnd(address user) internal {
         Bet storage bet = bets[user];
         require(!bet.settled, "Already settled");
@@ -98,12 +102,12 @@ contract BTCBetting is AutomationCompatibleInterface, FunctionsClient, Confirmed
         bet.settled = true;
     }
 
-    // Chainlink Automation
     function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {
         for (uint i; i < activeBettors.length; i++) {
-            Bet storage b = bets[activeBettors[i]];
+            address user = activeBettors[i];
+            Bet storage b = bets[user];
             if (!b.settled && block.timestamp >= b.startTime + 300) {
-                return (true, abi.encode(activeBettors[i], i));
+                return (true, abi.encode(user, i));
             }
         }
         return (false, "");
@@ -120,7 +124,6 @@ contract BTCBetting is AutomationCompatibleInterface, FunctionsClient, Confirmed
         activeBettors.pop();
     }
 
-    // Chainlink Functions
     function _requestPrice(address user, PriceType pType) internal {
         FunctionsRequest.Request memory req;
         req.initializeRequestForInlineJavaScript(source);
@@ -146,12 +149,10 @@ contract BTCBetting is AutomationCompatibleInterface, FunctionsClient, Confirmed
             bet.endPrice = price;
             _finalizeBet(user, bet);
         }
-
         delete requestToUser[requestId];
         delete requestType[requestId];
     }
 
-    // Bet resolution
     function _finalizeBet(address user, Bet storage bet) internal {
         bool won = (bet.position == 0 && bet.endPrice > bet.startPrice) ||
                    (bet.position == 1 && bet.endPrice < bet.startPrice);
@@ -162,13 +163,19 @@ contract BTCBetting is AutomationCompatibleInterface, FunctionsClient, Confirmed
             uint lotteryAmt = bet.amount * 5 / 100;
             uint carbonAmt = bet.amount * 2 / 100;
             uint finalPayout = payout - lotteryAmt - carbonAmt;
+            
+            // Ensure contract has sufficient balance
+            require(address(this).balance >= payout, "Insufficient pool funds");
             poolBalance -= payout;
 
-            if (lotteryContract != address(0)) ILottery(lotteryContract).enterLottery{value: lotteryAmt}(user);
-            if (carbonCreditContract != address(0)) ICarbonCredit(carbonCreditContract).convertAndMint{value: carbonAmt}(user);
+            if (lotteryContract != address(0)) {
+                ILottery(lotteryContract).enterLottery{value: lotteryAmt}(user);
+            }
+            if (carbonCreditContract != address(0)) {
+                ICarbonCredit(carbonCreditContract).convertAndMint{value: carbonAmt}(user);
+            }
             payable(user).transfer(finalPayout);
         }
-
         emit BetSettled(user, won, bet.startPrice, bet.endPrice);
     }
 
@@ -181,16 +188,20 @@ contract BTCBetting is AutomationCompatibleInterface, FunctionsClient, Confirmed
         return int256(val);
     }
 
-    // Admin pool functions
-    function fundPool() external payable { poolBalance += msg.value; }
+    function fundPool() external payable { 
+        poolBalance += msg.value; 
+    }
+    
     function withdrawPool(uint amt) external onlyOwner {
         require(amt <= poolBalance, "Insufficient pool");
         poolBalance -= amt;
         payable(owner()).transfer(amt);
     }
-    receive() external payable { poolBalance += msg.value; }
+    
+    receive() external payable { 
+        poolBalance += msg.value; 
+    }
 
-    // Views
     function getActiveBettors() external view returns (address[] memory) {
         return activeBettors;
     }

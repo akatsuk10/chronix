@@ -15,20 +15,22 @@ async function main() {
   await vault.deployed();
   console.log("Vault deployed at:", vault.address);
 
-  // 2. Deploy CarbonCredit
+  // 2. Deploy CarbonCredit with feed addresses
   const CarbonCredit = await hre.ethers.getContractFactory("CarbonCredit");
-  const carbon = await CarbonCredit.deploy(AVAX_USD, EMCH_FEED, true);
+  const carbon = await CarbonCredit.deploy(AVAX_USD, EMCH_FEED, true); // ✅ for testnet
   await carbon.deployed();
   console.log("CarbonCredit deployed at:", carbon.address);
 
-  // 3. Deploy BTCBetting
+  // 3. Deploy BTCBetting with BTC price feed
   const BTCBetting = await hre.ethers.getContractFactory("BTCBetting");
-  const betting = await BTCBetting.deploy();
+  const betting = await BTCBetting.deploy(BTC_FEED);
   await betting.deployed();
   console.log("BTCBetting deployed at:", betting.address);
 
-  // 4. Deploy Lottery
-  const subscriptionId = 123; // <-- replace with your uint64 Chainlink sub ID
+  // 4. Deploy Lottery with VRF config
+  const subscriptionId = hre.ethers.BigNumber.from(
+    "101394378300481048569531429903084182062350173979824139452347975085728304527293"
+  ); // Replace with your real Chainlink subscription ID
   const WEEK_IN_SECONDS = 7 * 24 * 60 * 60;
   const VRF_COORDINATOR = "0x5c210ef41cd1a72de73bf76ec39637bb0d3d7bee";
   const KEY_HASH =
@@ -44,22 +46,31 @@ async function main() {
   await lottery.deployed();
   console.log("Lottery deployed at:", lottery.address);
 
-  // === Wire contracts ===
+  // === Wiring contracts together ===
   await carbon.setBettingContract(betting.address);
-  await betting.setLotteryContract(lottery.address);
-  await betting.setCarbonContract(carbon.address);
-  await betting.setVault(vault.address);
-  await lottery.setBettingContract(betting.address);
+  console.log("CarbonCredit: bettingContract set");
 
-  console.log("\n✅ Deployment and wiring complete!");
-  console.log("Vault:", vault.address);
-  console.log("CarbonCredit:", carbon.address);
-  console.log("BTCBetting:", betting.address);
-  console.log("Lottery:", lottery.address);
+  await betting.setLotteryContract(lottery.address);
+  console.log("Betting: lotteryContract set");
+
+  await betting.setCarbonContract(carbon.address);
+  console.log("Betting: carbonContract set");
+
+  await betting.setVault(vault.address); // ✅ NEW
+  console.log("Betting: vaultContract set");
+
+  await lottery.setBettingContract(betting.address);
+  console.log("Lottery: bettingContract set");
+
+  // ✅ Final output
+  console.log("\n✅ Deployment complete!");
+  console.log("vault:", vault.address);
+  console.log("carbonCredit:", carbon.address);
+  console.log("betting:", betting.address);
+  console.log("lottery:", lottery.address);
 }
 
 main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
-

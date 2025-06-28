@@ -4,6 +4,7 @@ async function main() {
   const [deployer] = await hre.ethers.getSigners();
   console.log("Deploying contracts with:", deployer.address);
 
+  // External feed addresses (update as needed)
   const BTC_FEED = "0x2779D32d5166BAaa2B2b658333bA7e6Ec0C65743";
   const AVAX_USD = "0x5498BB86BC934c8D34FDA08E81D444153d0D06aD";
   const EMCH_FEED = "0x0d2807dc7FA52d3B38be564B64a2b37753C49AdD";
@@ -27,11 +28,11 @@ async function main() {
   console.log("BTCBetting deployed at:", betting.address);
 
   // 4. Deploy Lottery
-  const subscriptionId =hre.ethers.BigNumber.from("101394378300481048569531429903084182062350173979824139452347975085728304527293"); // <-- replace with your uint64 Chainlink sub ID
+  // Replace with your actual subscriptionId (uint64)
+  const subscriptionId = hre.ethers.BigNumber.from("101394378300481048569531429903084182062350173979824139452347975085728304527293");
   const WEEK_IN_SECONDS = 7 * 24 * 60 * 60;
   const VRF_COORDINATOR = "0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE";
-  const KEY_HASH =
-    "0xc799bd1e3bd4d1a41cd4968997a4e03dfd2a3c7c04b695881138580163f42887";
+  const KEY_HASH = "0xc799bd1e3bd4d1a41cd4968997a4e03dfd2a3c7c04b695881138580163f42887";
 
   const Lottery = await hre.ethers.getContractFactory("Lottery");
   const lottery = await Lottery.deploy(
@@ -43,25 +44,38 @@ async function main() {
   await lottery.deployed();
   console.log("Lottery deployed at:", lottery.address);
 
-  // === Wire contracts ===
-  await vault.setBettingContract(betting.address);
-  console.log("connected 6")
-  await betting.setVault(vault.address);
-  console.log("connected 4")
-  await carbon.setBettingContract(betting.address);
-  console.log("connected 1")
-  await betting.setLotteryContract(lottery.address);
-  console.log("connected 2")
-  await betting.setCarbonContract(carbon.address);
-  console.log("connected 3")
-  await lottery.setBettingContract(betting.address);
-  console.log("connected 5")
+  // === Wiring contracts ===
 
+  // 1. Set betting contract in Vault
+  let tx = await vault.setBettingContract(betting.address);
+  await tx.wait();
+  console.log("Vault wired to BTCBetting");
+
+  // 2. Set betting contract in CarbonCredit
+  tx = await carbon.setBettingContract(betting.address);
+  await tx.wait();
+  console.log("CarbonCredit wired to BTCBetting");
+
+  // 3. Set betting contract in Lottery
+  tx = await lottery.setBettingContract(betting.address);
+  await tx.wait();
+  console.log("Lottery wired to BTCBetting");
+
+  // 4. Initialize all dependencies in BTCBetting at once
+  tx = await betting.initializeContracts(
+    vault.address,
+    lottery.address,
+    carbon.address
+  );
+  await tx.wait();
+  console.log("BTCBetting initialized with Vault, Lottery, CarbonCredit");
+
+  // === Done ===
   console.log("\n✅ Deployment and wiring complete!");
-  console.log("Vault:", vault.address);
-  console.log("CarbonCredit:", carbon.address);
-  console.log("BTCBetting:", betting.address);
-  console.log("Lottery:", lottery.address)  ;
+  console.log("Vault:        ", vault.address);
+  console.log("CarbonCredit: ", carbon.address);
+  console.log("BTCBetting:   ", betting.address);
+  console.log("Lottery:      ", lottery.address);
 }
 
 main().catch((error) => {
