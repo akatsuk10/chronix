@@ -2,30 +2,36 @@ const hre = require("hardhat");
 
 async function main() {
   const [deployer] = await hre.ethers.getSigners();
-  console.log("🚀 Deploying contracts from:", deployer.address);
+  console.log("Deploying contracts with:", deployer.address);
 
-  // Chainlink Feed addresses on Fuji
-  const BTC_FEED = "0x2779D32d5166BAaa2B2b658333bA7e6Ec0C65743"; // BTC/USD
-  const AVAX_USD = "0x5498BB86BC934c8D34FDA08E81D444153d0D06aD"; // AVAX/USD
-  const EMCH_FEED = "0x0d2807dc7FA52d3B38be564B64a2b37753C49AdD"; // EMCH/USD
+  const BTC_FEED = "0x2779D32d5166BAaa2B2b658333bA7e6Ec0C65743";
+  const AVAX_USD = "0x5498BB86BC934c8D34FDA08E81D444153d0D06aD";
+  const EMCH_FEED = "0x0d2807dc7FA52d3B38be564B64a2b37753C49AdD";
 
-  // 1. Deploy VaultBetting (Merged Contract)
-  const VaultBetting = await hre.ethers.getContractFactory("VaultBetting");
-  const betting = await VaultBetting.deploy(BTC_FEED);
-  await betting.deployed();
-  console.log("✅ VaultBetting deployed at:", betting.address);
+  // 1. Deploy Vault
+  const Vault = await hre.ethers.getContractFactory("Vault");
+  const vault = await Vault.deploy();
+  await vault.deployed();
+  console.log("Vault deployed at:", vault.address);
 
   // 2. Deploy CarbonCredit
   const CarbonCredit = await hre.ethers.getContractFactory("CarbonCredit");
-  const carbon = await CarbonCredit.deploy(AVAX_USD, EMCH_FEED);
+  const carbon = await CarbonCredit.deploy(AVAX_USD, EMCH_FEED, true);
   await carbon.deployed();
-  console.log("✅ CarbonCredit deployed at:", carbon.address);
+  console.log("CarbonCredit deployed at:", carbon.address);
 
-  // 3. Deploy Lottery with Chainlink VRF configs
-  const subscriptionId = hre.ethers.BigNumber.from("101394378300481048569531429903084182062350173979824139452347975085728304527293"); // Replace with your actual VRF subscription ID
+  // 3. Deploy BTCBetting
+  const BTCBetting = await hre.ethers.getContractFactory("BTCBetting");
+  const betting = await BTCBetting.deploy();
+  await betting.deployed();
+  console.log("BTCBetting deployed at:", betting.address);
+
+  // 4. Deploy Lottery
+  const subscriptionId =hre.ethers.BigNumber.from("101394378300481048569531429903084182062350173979824139452347975085728304527293"); // <-- replace with your uint64 Chainlink sub ID
   const WEEK_IN_SECONDS = 7 * 24 * 60 * 60;
-  const VRF_COORDINATOR = "0x5c210ef41cd1a72de73bf76ec39637bb0d3d7bee";
-  const KEY_HASH = "0x354d2f95da55398f44b7cff77da56283d9c6c829a4bdf1bbcaf2ad6a4d081f61";
+  const VRF_COORDINATOR = "0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE";
+  const KEY_HASH =
+    "0xc799bd1e3bd4d1a41cd4968997a4e03dfd2a3c7c04b695881138580163f42887";
 
   const Lottery = await hre.ethers.getContractFactory("Lottery");
   const lottery = await Lottery.deploy(
@@ -35,26 +41,24 @@ async function main() {
     KEY_HASH
   );
   await lottery.deployed();
-  console.log("✅ Lottery deployed at:", lottery.address);
+  console.log("Lottery deployed at:", lottery.address);
 
-  // === Contract Wiring ===
-  await betting.setCarbonContract(carbon.address);
-  console.log("🔗 VaultBetting: CarbonCredit connected");
-
+  // === Wire contracts ===
+  await carbon.setBettingContract(betting.address);
   await betting.setLotteryContract(lottery.address);
-  console.log("🔗 VaultBetting: Lottery connected");
-
+  await betting.setCarbonContract(carbon.address);
+  await betting.setVault(vault.address);
   await lottery.setBettingContract(betting.address);
-  console.log("🔗 Lottery: VaultBetting connected");
+  await vault.setBettingContract(betting.address);
 
-  // ✅ Final Summary
-  console.log("\n🎯 Deployment Complete:");
-  console.log("VaultBetting:", betting.address);
+  console.log("\n✅ Deployment and wiring complete!");
+  console.log("Vault:", vault.address);
   console.log("CarbonCredit:", carbon.address);
+  console.log("BTCBetting:", betting.address);
   console.log("Lottery:", lottery.address);
 }
 
 main().catch((error) => {
-  console.error("❌ Deployment failed:", error);
+  console.error(error);
   process.exitCode = 1;
 });

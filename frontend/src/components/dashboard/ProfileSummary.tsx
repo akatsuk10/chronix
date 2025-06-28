@@ -1,10 +1,11 @@
 import React from 'react';
 
-export default function ProfileSummary ()  {
+const ProfileSummary = () => {
     return (
         <div>
-Profile Summary 
-       </div>
+            
+        </div>
     );
 }
 
+export default ProfileSummary;

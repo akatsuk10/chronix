@@ -7,7 +7,7 @@ module.exports = {
   networks: {
     fuji: {
       url: "https://api.avax-test.network/ext/bc/C/rpc",
-      accounts: ["921ec77841e1d3e815c4ac15a02ca2bebfdf44703e0d02b4310976c19381572e"],
+      accounts: ["f96f6fdfc1d18b7d14e8879c0033831885ffec4eab6eda5a0be88615e4fa8465"],
     },
   },
 };
