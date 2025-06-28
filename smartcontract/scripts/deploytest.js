@@ -44,18 +44,24 @@ async function main() {
   console.log("Lottery deployed at:", lottery.address);
 
   // === Wire contracts ===
-  await carbon.setBettingContract(betting.address);
-  await betting.setLotteryContract(lottery.address);
-  await betting.setCarbonContract(carbon.address);
-  await betting.setVault(vault.address);
-  await lottery.setBettingContract(betting.address);
   await vault.setBettingContract(betting.address);
+  console.log("connected 6")
+  await betting.setVault(vault.address);
+  console.log("connected 4")
+  await carbon.setBettingContract(betting.address);
+  console.log("connected 1")
+  await betting.setLotteryContract(lottery.address);
+  console.log("connected 2")
+  await betting.setCarbonContract(carbon.address);
+  console.log("connected 3")
+  await lottery.setBettingContract(betting.address);
+  console.log("connected 5")
 
   console.log("\n✅ Deployment and wiring complete!");
   console.log("Vault:", vault.address);
   console.log("CarbonCredit:", carbon.address);
   console.log("BTCBetting:", betting.address);
-  console.log("Lottery:", lottery.address);
+  console.log("Lottery:", lottery.address)  ;
 }
 
 main().catch((error) => {

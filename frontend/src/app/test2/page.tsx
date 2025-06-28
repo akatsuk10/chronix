@@ -29,6 +29,10 @@ export default function Dashboard() {
   const [debugInfo, setDebugInfo] = useState('');
   const [fundAmount, setFundAmount] = useState('');
   const [activeBet, setActiveBet] = useState<any>(null);
+  const [bettingVaultAddress, setBettingVaultAddress] = useState<string>('');
+  const [vaultBettingContract, setVaultBettingContract] = useState<string>('');
+  const [poolBalance, setPoolBalance] = useState<string>('0');
+  const [userActiveBet, setUserActiveBet] = useState<any>(null);
 
   useEffect(() => {
     const initProvider = async () => {
@@ -164,6 +168,116 @@ export default function Dashboard() {
     }
   };
 
+  const checkBettingVaultAddress = async () => {
+    try {
+      if (!provider) {
+        setError('Provider not connected');
+        return;
+      }
+      
+      const betting = new ethers.Contract(CONTRACTS.betting, BTCBettingABI.abi, provider);
+      const vaultAddress = await betting.vault();
+      setBettingVaultAddress(vaultAddress);
+      
+      const isSameVault = vaultAddress.toLowerCase() === CONTRACTS.vault.toLowerCase();
+      setDebugInfo(`Betting contract vault: ${vaultAddress}, Our vault: ${CONTRACTS.vault}, Match: ${isSameVault ? 'YES' : 'NO'}`);
+    } catch (err: any) {
+      console.error('Error fetching betting vault address:', err);
+      setError(err.message || 'Failed to fetch betting vault address');
+      setBettingVaultAddress('');
+    }
+  };
+
+  const checkVaultConfiguration = async () => {
+    try {
+      if (!provider) {
+        setError('Provider not connected');
+        return;
+      }
+      
+      const vault = new ethers.Contract(CONTRACTS.vault, VaultABI.abi, provider);
+      const bettingContractAddress = await vault.bettingContract();
+      setVaultBettingContract(bettingContractAddress);
+      
+      const isCorrectBettingContract = bettingContractAddress.toLowerCase() === CONTRACTS.betting.toLowerCase();
+      setDebugInfo(`Vault betting contract: ${bettingContractAddress}, Expected: ${CONTRACTS.betting}, Match: ${isCorrectBettingContract ? 'YES' : 'NO'}`);
+    } catch (err: any) {
+      console.error('Error checking vault configuration:', err);
+      setError(err.message || 'Failed to check vault configuration');
+      setVaultBettingContract('');
+    }
+  };
+
+  const checkUserVaultBalance = async () => {
+    try {
+      if (!provider || !(wallet.address || connectedAddress)) {
+        setError('Wallet not connected');
+        return;
+      }
+      
+      const addressToUse = wallet.address || connectedAddress;
+      const vault = new ethers.Contract(CONTRACTS.vault, VaultABI.abi, provider);
+      const userBalance = await vault.getAVAXBalance(addressToUse);
+      
+      console.log('User vault balance:', ethers.utils.formatEther(userBalance), 'AVAX');
+      setDebugInfo(`User vault balance: ${ethers.utils.formatEther(userBalance)} AVAX`);
+      return userBalance;
+    } catch (err: any) {
+      console.error('Error checking user vault balance:', err);
+      setError(err.message || 'Failed to check user vault balance');
+      return ethers.BigNumber.from(0);
+    }
+  };
+
+  const checkPoolBalance = async () => {
+    try {
+      if (!provider) {
+        setError('Provider not connected');
+        return;
+      }
+      
+      const betting = new ethers.Contract(CONTRACTS.betting, BTCBettingABI.abi, provider);
+      const balance = await betting.poolBalance();
+      const formattedBalance = ethers.utils.formatEther(balance);
+      setPoolBalance(formattedBalance);
+      
+      console.log('Pool balance:', formattedBalance, 'AVAX');
+      setDebugInfo(`Pool balance: ${formattedBalance} AVAX`);
+      return balance;
+    } catch (err: any) {
+      console.error('Error checking pool balance:', err);
+      setError(err.message || 'Failed to check pool balance');
+      return ethers.BigNumber.from(0);
+    }
+  };
+
+  const checkUserActiveBet = async () => {
+    try {
+      if (!provider || !(wallet.address || connectedAddress)) {
+        setError('Wallet not connected');
+        return;
+      }
+      
+      const addressToUse = wallet.address || connectedAddress;
+      const betting = new ethers.Contract(CONTRACTS.betting, BTCBettingABI.abi, provider);
+      const bet = await betting.getBet(addressToUse);
+      setUserActiveBet(bet);
+      
+      console.log('User active bet:', bet);
+      if (bet.amount && bet.amount.toString() !== '0' && !bet.settled) {
+        setDebugInfo(`Active bet found: ${ethers.utils.formatEther(bet.amount)} AVAX, Position: ${bet.position === 0 ? 'Long' : 'Short'}, Settled: ${bet.settled}`);
+      } else {
+        setDebugInfo('No active bet found');
+      }
+      return bet;
+    } catch (err: any) {
+      console.error('Error checking user active bet:', err);
+      setError(err.message || 'Failed to check user active bet');
+      setUserActiveBet(null);
+      return null;
+    }
+  };
+
   const placeBet = async (position: number) => {
     if (timeLeft > 0) {
       setError('Please wait for the current round to end');
@@ -184,21 +298,79 @@ export default function Dashboard() {
     setError('');
 
     try {
-      const vault = new ethers.Contract(CONTRACTS.vault, VaultABI.abi, signer);
-      const tx = await vault.placeBetFromVault(
-        ethers.utils.parseEther(betAmount),
+      // Check vault configuration first
+      await checkVaultConfiguration();
+      
+      // Check user's actual vault balance
+      const userVaultBalance = await checkUserVaultBalance();
+      const betAmountWei = ethers.utils.parseEther(betAmount);
+      
+      if (userVaultBalance.lt(betAmountWei)) {
+        setError(`Insufficient vault balance. You have ${ethers.utils.formatEther(userVaultBalance)} AVAX but trying to bet ${betAmount} AVAX`);
+        setIsLoading(false);
+        return;
+      }
+
+      // Check if user has an active bet
+      const activeBet = await checkUserActiveBet();
+      if (activeBet && activeBet.amount && activeBet.amount.toString() !== '0' && !activeBet.settled) {
+        setError(`You already have an active bet of ${ethers.utils.formatEther(activeBet.amount)} AVAX. Please wait for it to be settled.`);
+        setIsLoading(false);
+        return;
+      }
+
+      // Check pool balance
+      const poolBal = await checkPoolBalance();
+      if (poolBal.lt(betAmountWei)) {
+        setError(`Insufficient pool balance. Pool has ${ethers.utils.formatEther(poolBal)} AVAX but you're trying to bet ${betAmount} AVAX`);
+        setIsLoading(false);
+        return;
+      }
+
+      // Corrected: Use BTCBetting contract's placeBetFor
+      const betting = new ethers.Contract(CONTRACTS.betting, BTCBettingABI.abi, signer);
+      const userAddress = wallet.address || connectedAddress;
+      
+      console.log('Placing bet with params:', {
+        user: userAddress,
+        position: position,
+        amount: ethers.utils.formatEther(betAmountWei),
+        vaultBalance: ethers.utils.formatEther(userVaultBalance),
+        poolBalance: ethers.utils.formatEther(poolBal)
+      });
+      
+      const tx = await betting.placeBetFor(
+        userAddress,
         position,
+        betAmountWei,
         { gasLimit: 500000 }
       );
       
+      console.log('Transaction sent:', tx.hash);
       await tx.wait();
+      console.log('Transaction confirmed');
+      
       setBetAmount('');
       setTimeLeft(BET_TIMEOUT);
       await fetchBalances();
       alert(`Bet placed successfully! Position: ${position === 0 ? 'Long' : 'Short'}`);
     } catch (err: any) {
       console.error('Betting error:', err);
-      setError(err.message || 'Failed to place bet');
+      
+      // Provide more specific error messages
+      if (err.message.includes("Active bet exists")) {
+        setError('You already have an active bet. Please wait for it to be settled.');
+      } else if (err.message.includes("Insufficient Vault balance")) {
+        setError('Insufficient balance in your vault. Please deposit more AVAX.');
+      } else if (err.message.includes("Insufficient pool")) {
+        setError('Insufficient pool balance. The betting pool needs more funds.');
+      } else if (err.message.includes("Invalid position")) {
+        setError('Invalid position. Use 0 for Long or 1 for Short.');
+      } else if (err.message.includes("Amount zero")) {
+        setError('Bet amount must be greater than 0.');
+      } else {
+        setError(err.message || 'Failed to place bet');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -231,6 +403,10 @@ export default function Dashboard() {
       console.log('Wallet address or provider changed, fetching balances...');
       fetchBalances();
       fetchActiveBet();
+      checkBettingVaultAddress();
+      checkVaultConfiguration();
+      checkPoolBalance();
+      checkUserActiveBet();
     }
   }, [wallet.address, connectedAddress, provider]);
 
@@ -244,7 +420,16 @@ export default function Dashboard() {
         <p><strong>Redux Wallet Address:</strong> {wallet.address || 'Not connected'}</p>
         <p><strong>Connected Address:</strong> {connectedAddress || 'Not connected'}</p>
         <p><strong>Provider:</strong> {provider ? 'Connected' : 'Not connected'}</p>
-        <p><strong>Contract Address:</strong> {CONTRACTS.vault}</p>
+        <p><strong>Our Vault Address:</strong> {CONTRACTS.vault}</p>
+        <p><strong>Betting Contract Vault:</strong> {bettingVaultAddress || 'Not fetched'}</p>
+        <p><strong>Vault Addresses Match:</strong> {bettingVaultAddress && CONTRACTS.vault ? 
+          (bettingVaultAddress.toLowerCase() === CONTRACTS.vault.toLowerCase() ? '✅ YES' : '❌ NO') : 'Unknown'}</p>
+        <p><strong>Vault Betting Contract:</strong> {vaultBettingContract || 'Not fetched'}</p>
+        <p><strong>Betting Contract Match:</strong> {vaultBettingContract && CONTRACTS.betting ? 
+          (vaultBettingContract.toLowerCase() === CONTRACTS.betting.toLowerCase() ? '✅ YES' : '❌ NO') : 'Unknown'}</p>
+        <p><strong>Pool Balance:</strong> {parseFloat(poolBalance).toFixed(4)} AVAX</p>
+        <p><strong>User Active Bet:</strong> {userActiveBet && userActiveBet.amount && userActiveBet.amount.toString() !== '0' && !userActiveBet.settled ? 
+          `${ethers.utils.formatEther(userActiveBet.amount)} AVAX (${userActiveBet.position === 0 ? 'Long' : 'Short'})` : 'None'}</p>
       </div>
 
       {/* Active Bet Section */}
@@ -400,6 +585,123 @@ export default function Dashboard() {
             </p>
             <p className="text-gray-400 mt-2">Total Pool Size</p>
           </div>
+        </div>
+
+        {/* Vault Address Check Section */}
+        <div className="bg-gray-800 p-6 rounded shadow">
+          <h2 className="text-xl mb-4 font-semibold">Vault Address Check</h2>
+          <div className="space-y-3">
+            <div className="flex justify-between">
+              <span className="text-gray-300">Our Vault:</span>
+              <span className="font-mono text-sm">{CONTRACTS.vault}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">Betting Contract Vault:</span>
+              <span className="font-mono text-sm">{bettingVaultAddress || 'Not fetched'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">Status:</span>
+              <span className={`font-bold ${bettingVaultAddress && CONTRACTS.vault ? 
+                (bettingVaultAddress.toLowerCase() === CONTRACTS.vault.toLowerCase() ? 'text-green-400' : 'text-red-400') : 'text-yellow-400'}`}>
+                {bettingVaultAddress && CONTRACTS.vault ? 
+                  (bettingVaultAddress.toLowerCase() === CONTRACTS.vault.toLowerCase() ? '✅ MATCH' : '❌ MISMATCH') : '⏳ CHECKING'}
+              </span>
+            </div>
+          </div>
+          <button
+            className="mt-4 w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded"
+            onClick={checkBettingVaultAddress}
+          >
+            Check Vault Address
+          </button>
+        </div>
+
+        {/* Vault Configuration Check Section */}
+        <div className="bg-gray-800 p-6 rounded shadow">
+          <h2 className="text-xl mb-4 font-semibold">Vault Configuration</h2>
+          <div className="space-y-3">
+            <div className="flex justify-between">
+              <span className="text-gray-300">Vault Betting Contract:</span>
+              <span className="font-mono text-sm">{vaultBettingContract || 'Not set'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">Expected Betting Contract:</span>
+              <span className="font-mono text-sm">{CONTRACTS.betting}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">Status:</span>
+              <span className={`font-bold ${vaultBettingContract && CONTRACTS.betting ? 
+                (vaultBettingContract.toLowerCase() === CONTRACTS.betting.toLowerCase() ? 'text-green-400' : 'text-red-400') : 'text-yellow-400'}`}>
+                {vaultBettingContract && CONTRACTS.betting ? 
+                  (vaultBettingContract.toLowerCase() === CONTRACTS.betting.toLowerCase() ? '✅ CONFIGURED' : '❌ MISCONFIGURED') : '⏳ CHECKING'}
+              </span>
+            </div>
+          </div>
+          <button
+            className="mt-4 w-full px-4 py-2 bg-green-600 hover:bg-green-700 rounded"
+            onClick={checkVaultConfiguration}
+          >
+            Check Configuration
+          </button>
+        </div>
+
+        {/* Pool Balance Section */}
+        <div className="bg-gray-800 p-6 rounded shadow">
+          <h2 className="text-xl mb-4 font-semibold">Betting Pool</h2>
+          <div className="space-y-3">
+            <div className="flex justify-between">
+              <span className="text-gray-300">Pool Balance:</span>
+              <span className="font-bold text-yellow-400">{parseFloat(poolBalance).toFixed(4)} AVAX</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">Status:</span>
+              <span className={`font-bold ${parseFloat(poolBalance) > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {parseFloat(poolBalance) > 0 ? '✅ FUNDED' : '❌ EMPTY'}
+              </span>
+            </div>
+          </div>
+          <button
+            className="mt-4 w-full px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded"
+            onClick={checkPoolBalance}
+          >
+            Check Pool Balance
+          </button>
+        </div>
+
+        {/* User Active Bet Section */}
+        <div className="bg-gray-800 p-6 rounded shadow">
+          <h2 className="text-xl mb-4 font-semibold">Your Active Bet</h2>
+          {userActiveBet && userActiveBet.amount && userActiveBet.amount.toString() !== '0' && !userActiveBet.settled ? (
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-gray-300">Amount:</span>
+                <span className="font-bold">{ethers.utils.formatEther(userActiveBet.amount)} AVAX</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-300">Position:</span>
+                <span className="font-bold">{userActiveBet.position === 0 ? 'Long' : 'Short'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-300">Start Time:</span>
+                <span className="font-bold">{userActiveBet.startTime ? new Date(Number(userActiveBet.startTime) * 1000).toLocaleString() : '-'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-300">Status:</span>
+                <span className="font-bold text-yellow-400">⏳ ACTIVE</span>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center">
+              <p className="text-gray-400">No active bet</p>
+              <p className="text-sm text-gray-500 mt-2">You can place a new bet</p>
+            </div>
+          )}
+          <button
+            className="mt-4 w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded"
+            onClick={checkUserActiveBet}
+          >
+            Check Active Bet
+          </button>
         </div>
       </div>
     </div>

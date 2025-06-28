@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
 import {AutomationCompatibleInterface} from "@chainlink/contracts/src/v0.8/automation/AutomationCompatible.sol";
@@ -7,24 +8,24 @@ import {ConfirmedOwner} from "@chainlink/contracts/src/v0.8/shared/access/Confir
 
 interface ILottery { function enterLottery(address user) external payable; }
 interface ICarbonCredit { function convertAndMint(address user) external payable; }
+interface IVault { function deductForBet(address user, uint256 amount) external; }
 
 contract BTCBetting is AutomationCompatibleInterface, FunctionsClient, ConfirmedOwner {
     using FunctionsRequest for FunctionsRequest.Request;
 
     address private constant ROUTER = 0xA9d587a00A31A52Ed70D6026794a8FC5E2F5dCb0;
-    
+
     address public vault;
     address public lotteryContract;
     address public carbonCreditContract;
-
 
     uint256 public poolBalance;
 
     struct Bet {
         uint256 amount;
         uint256 startTime;
-        int256 startPrice;  // BTC price at bet placement
-        int256 endPrice;    // BTC price at bet settlement
+        int256 startPrice;
+        int256 endPrice;
         uint8 position;
         bool settled;
     }
@@ -32,12 +33,10 @@ contract BTCBetting is AutomationCompatibleInterface, FunctionsClient, Confirmed
     mapping(address => Bet) public bets;
     address[] public activeBettors;
 
-    // 🔁 Track pending price requests
     enum PriceType { NONE, START, END }
     mapping(bytes32 => address) private requestToUser;
     mapping(bytes32 => PriceType) private requestType;
 
-    // Chainlink Functions config
     string private source = 
         "const response = await Functions.makeHttpRequest({"
         "url: 'https://chainlink-datastrems-api.onrender.com/api/report',"
@@ -61,45 +60,45 @@ contract BTCBetting is AutomationCompatibleInterface, FunctionsClient, Confirmed
 
     constructor() FunctionsClient(ROUTER) ConfirmedOwner(msg.sender) {}
 
-    modifier onlyVault() {
-        require(msg.sender == vault, "Only vault");
-        _;
-    }
-
-    // ––––– Config Functions –––––
-
+    // Config
     function setVault(address _vault) external onlyOwner { vault = _vault; }
     function setLotteryContract(address _lottery) external onlyOwner { lotteryContract = _lottery; }
     function setCarbonContract(address _carbon) external onlyOwner { carbonCreditContract = _carbon; }
 
-    // ––––– Bet Placement & First Price Fetch –––––
-
-    function placeBetFor(address user, uint8 position) external payable onlyVault {
+    // 🔁 Bet Placement — pull from Vault instead of msg.value
+    function placeBetFor(address user, uint8 position, uint256 amount) external {
         require(position <= 1, "Invalid position");
-        require(msg.value > 0, "No bet");
+        require(amount > 0, "Amount zero");
         require(bets[user].amount == 0 || bets[user].settled, "Active bet exists");
 
-        poolBalance += msg.value;
-        bets[user] = Bet({ amount: msg.value, startTime: block.timestamp, startPrice: 0, endPrice: 0, position: position, settled: false });
+        IVault(vault).deductForBet(user, amount); // <-- pull funds from vault
+        poolBalance += amount;
+
+        bets[user] = Bet({
+            amount: amount,
+            startTime: block.timestamp,
+            startPrice: 0,
+            endPrice: 0,
+            position: position,
+            settled: false
+        });
+
         activeBettors.push(user);
-        emit BetPlaced(user, position, msg.value);
+        emit BetPlaced(user, position, amount);
 
         _requestPrice(user, PriceType.START);
     }
 
-    // ––––– Settling a Bet & Second Price Fetch –––––
-
+    // 🏁 End bet
     function betEnd(address user) internal {
         Bet storage bet = bets[user];
         require(!bet.settled, "Already settled");
         require(block.timestamp >= bet.startTime + 300, "Too soon");
-
         _requestPrice(user, PriceType.END);
         bet.settled = true;
     }
 
-    // ––––– Chainlink Automation –––––
-
+    // Chainlink Automation
     function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {
         for (uint i; i < activeBettors.length; i++) {
             Bet storage b = bets[activeBettors[i]];
@@ -121,8 +120,7 @@ contract BTCBetting is AutomationCompatibleInterface, FunctionsClient, Confirmed
         activeBettors.pop();
     }
 
-    // ––––– Chainlink Functions –––––
-
+    // Chainlink Functions
     function _requestPrice(address user, PriceType pType) internal {
         FunctionsRequest.Request memory req;
         req.initializeRequestForInlineJavaScript(source);
@@ -133,7 +131,7 @@ contract BTCBetting is AutomationCompatibleInterface, FunctionsClient, Confirmed
         emit PriceRequested(user, pType, rid);
     }
 
-    function fulfillRequest(bytes32 requestId, bytes memory response, bytes memory err) internal override {
+    function fulfillRequest(bytes32 requestId, bytes memory response, bytes memory) internal override {
         require(requestToUser[requestId] != address(0), "Unknown request");
         address user = requestToUser[requestId];
         PriceType pType = requestType[requestId];
@@ -146,7 +144,6 @@ contract BTCBetting is AutomationCompatibleInterface, FunctionsClient, Confirmed
             bet.startPrice = price;
         } else if (pType == PriceType.END) {
             bet.endPrice = price;
-            // finalize bet now that endPrice is set
             _finalizeBet(user, bet);
         }
 
@@ -154,8 +151,7 @@ contract BTCBetting is AutomationCompatibleInterface, FunctionsClient, Confirmed
         delete requestType[requestId];
     }
 
-    // ––––– Bet Finalization Logic –––––
-
+    // Bet resolution
     function _finalizeBet(address user, Bet storage bet) internal {
         bool won = (bet.position == 0 && bet.endPrice > bet.startPrice) ||
                    (bet.position == 1 && bet.endPrice < bet.startPrice);
@@ -176,8 +172,6 @@ contract BTCBetting is AutomationCompatibleInterface, FunctionsClient, Confirmed
         emit BetSettled(user, won, bet.startPrice, bet.endPrice);
     }
 
-    // ––––– Utilities –––––
-
     function _parseInt(bytes memory b) internal pure returns (int256) {
         uint val;
         for (uint i; i < b.length; i++) {
@@ -187,14 +181,16 @@ contract BTCBetting is AutomationCompatibleInterface, FunctionsClient, Confirmed
         return int256(val);
     }
 
-    // ––––– Pool Management –––––
-
+    // Admin pool functions
     function fundPool() external payable { poolBalance += msg.value; }
-    function withdrawPool(uint amt) external onlyOwner { poolBalance -= amt; payable(owner()).transfer(amt); }
+    function withdrawPool(uint amt) external onlyOwner {
+        require(amt <= poolBalance, "Insufficient pool");
+        poolBalance -= amt;
+        payable(owner()).transfer(amt);
+    }
     receive() external payable { poolBalance += msg.value; }
 
-    // ––––– Views –––––
-
+    // Views
     function getActiveBettors() external view returns (address[] memory) {
         return activeBettors;
     }

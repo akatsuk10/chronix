@@ -19,6 +19,11 @@ contract Vault {
         _;
     }
 
+    modifier onlyBettingContract() {
+        require(msg.sender == bettingContract, "Only betting contract can call");
+        _;
+    }
+
     // Events
     event DepositAVAX(address indexed user, uint256 amount);
     event WithdrawAVAX(address indexed user, uint256 amount);
@@ -27,6 +32,12 @@ contract Vault {
 
     constructor() {
         owner = msg.sender;
+    }
+
+    // --- Config ---
+
+    function setBettingContract(address _betting) external onlyOwner {
+        bettingContract = _betting;
     }
 
     // --- Deposit Functions ---
@@ -45,28 +56,7 @@ contract Vault {
         );
         tokenBalances[token][msg.sender] += amount;
         emit DepositToken(msg.sender, token, amount);
-
-
     }
-
-//function to betting
-
-
-    function setBettingContract(address _betting) external onlyOwner {
-    bettingContract = _betting;
-}
-
-function placeBetFromVault(uint256 amount, uint8 position) external {
-    require(avaxBalances[msg.sender] >= amount, "Insufficient vault balance");
-    avaxBalances[msg.sender] -= amount;
-
-    // Call betting contract with user's address and AVAX
-    (bool success, ) = bettingContract.call{value: amount}(
-        abi.encodeWithSignature("placeBetFor(address,uint8)", msg.sender, position)
-    );
-    require(success, "Betting failed");
-}
-
 
     // --- Withdraw Functions ---
 
@@ -84,6 +74,14 @@ function placeBetFromVault(uint256 amount, uint8 position) external {
         emit WithdrawToken(msg.sender, token, amount);
     }
 
+    // --- Called by BTCBetting to Deduct Bet ---
+
+    function deductForBet(address user, uint256 amount) external onlyBettingContract {
+        require(avaxBalances[user] >= amount, "Insufficient Vault balance");
+        avaxBalances[user] -= amount;
+        // funds stay in Vault, BTCBetting updates poolBalance on its side
+    }
+
     // --- View Functions ---
 
     function getTokenBalance(address token, address user) external view returns (uint256) {
@@ -94,9 +92,7 @@ function placeBetFromVault(uint256 amount, uint8 position) external {
         return avaxBalances[user];
     }
 
-    
-
-    // --- Fallback for AVAX ---
+    // --- Fallback for direct AVAX transfers ---
 
     receive() external payable {
         avaxBalances[msg.sender] += msg.value;
