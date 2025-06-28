@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
 import VaultABI from '@/abis/Vault.json';
+import BTCBettingABI from '@/abis/BTCBetting.json';
 import { CONTRACTS } from '@/lib/contract/addresses';
 import { useSelector } from "react-redux";
 
@@ -14,15 +15,18 @@ export const BettingForm = () => {
   const [provider, setProvider] = useState<any>(null);
   const [signer, setSigner] = useState<any>(null);
   const [vaultBalance, setVaultBalance] = useState<string>('0');
-  const [isLoading, setIsLoading] = useState(false);
+  const [poolBalance, setPoolBalance] = useState<string>('0');
+  const [isLoadingLong, setIsLoadingLong] = useState(false);
+  const [isLoadingShort, setIsLoadingShort] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const [error, setError] = useState('');
   const [betSuccess, setBetSuccess] = useState(false);
   const [btcPrice, setBTCPrice] = useState<string>("...");
   const [betAmount, setBetAmount] = useState(0.5);
+  const [activeBet, setActiveBet] = useState<any>(null);
+  const [activeBetTimeLeft, setActiveBetTimeLeft] = useState<number | null>(null);
   const quickAmounts = [0.1, 0.5, 1];
 
-  // Setup provider and signer
   useEffect(() => {
     const setup = async () => {
       if (window.ethereum) {
@@ -35,7 +39,6 @@ export const BettingForm = () => {
     setup();
   }, []);
 
-  // Fetch vault balance
   const fetchVaultBalance = async () => {
     if (!provider || !wallet.address) return;
     try {
@@ -47,7 +50,6 @@ export const BettingForm = () => {
     }
   };
 
-  // Fetch BTC price
   const fetchBTCPrice = async () => {
     if (!provider) return;
     try {
@@ -57,22 +59,38 @@ export const BettingForm = () => {
         provider
       );
       const [, price] = await priceFeed.latestRoundData();
-      const formatted = parseFloat(ethers.utils.formatUnits(price, 8)).toFixed(2);
-      setBTCPrice(formatted);
+      setBTCPrice(parseFloat(ethers.utils.formatUnits(price, 8)).toFixed(2));
     } catch (err) {
       console.error("BTC price fetch error:", err);
     }
   };
 
-  // Fetch on load and wallet changes
+  const fetchActiveBet = async () => {
+    try {
+      if (!provider || !wallet.address) return;
+      const betting = new ethers.Contract(CONTRACTS.betting, BTCBettingABI.abi, provider);
+      const bet = await betting.getBet(wallet.address);
+
+      if (bet.settled) {
+        setActiveBet(null);
+        setActiveBetTimeLeft(null);
+        return;
+      }
+      setActiveBet(bet);
+    } catch (err: any) {
+      console.error('Fetch active bet error:', err);
+      setActiveBet(null);
+    }
+  };
+
   useEffect(() => {
     if (wallet.address && provider) {
       fetchVaultBalance();
       fetchBTCPrice();
+      fetchActiveBet();
     }
   }, [wallet.address, provider]);
 
-  // Handle cooldown
   useEffect(() => {
     if (timeLeft > 0) {
       const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
@@ -80,46 +98,121 @@ export const BettingForm = () => {
     }
   }, [timeLeft]);
 
-  // Place bet
+  const checkUserVaultBalance = async () => {
+    try {
+      const vault = new ethers.Contract(CONTRACTS.vault, VaultABI.abi, provider);
+      return await vault.getAVAXBalance(wallet.address);
+    } catch {
+      return ethers.BigNumber.from(0);
+    }
+  };
+
+  const checkUserActiveBet = async () => {
+    try {
+      const betting = new ethers.Contract(CONTRACTS.betting, BTCBettingABI.abi, provider);
+      const bet = await betting.getBet(wallet.address);
+      return bet;
+    } catch {
+      return null;
+    }
+  };
+
+  const checkPoolBalance = async () => {
+    try {
+      const betting = new ethers.Contract(CONTRACTS.betting, BTCBettingABI.abi, provider);
+      const balance = await betting.poolBalance();
+      setPoolBalance(ethers.utils.formatEther(balance));
+      return balance;
+    } catch {
+      return ethers.BigNumber.from(0);
+    }
+  };
+
   const placeBet = async (position: number) => {
     if (timeLeft > 0) {
-      setError('Wait for current round to end');
+      setError('Please wait for the current round to end');
       return;
     }
 
     if (!signer || !betAmount || betAmount <= 0) {
-      setError('Invalid bet amount');
+      setError('Please enter a valid bet amount');
       return;
     }
 
-    if (betAmount > parseFloat(vaultBalance)) {
+    if (parseFloat(betAmount.toString()) > parseFloat(vaultBalance)) {
       setError('Insufficient vault balance');
       return;
     }
 
-    setIsLoading(true);
     setError('');
     setBetSuccess(false);
 
+    // Set loading state based on position
+    if (position === 0) setIsLoadingLong(true);
+    else setIsLoadingShort(true);
+
     try {
-      const vault = new ethers.Contract(CONTRACTS.vault, VaultABI.abi, signer);
-      const tx = await vault.placeBetFromVault(
-        ethers.utils.parseEther(betAmount.toString()),
-        position,
-        { gasLimit: 500000 }
-      );
+      const userVaultBalance = await checkUserVaultBalance();
+      const betAmountWei = ethers.utils.parseEther(betAmount.toString());
+
+      if (userVaultBalance.lt(betAmountWei)) {
+        setError(`Insufficient vault balance`);
+        return;
+      }
+
+      const active = await checkUserActiveBet();
+      if (
+        active && !active.settled
+      ) {
+          setError(`You already have an active bet.`);
+          return;
+        }
+      
+
+      const poolBal = await checkPoolBalance();
+      if (poolBal.lt(betAmountWei)) {
+        setError(`Pool has insufficient liquidity.`);
+        return;
+      }
+
+      const betting = new ethers.Contract(CONTRACTS.betting, BTCBettingABI.abi, signer);
+      const tx = await betting.placeBetFor(wallet.address, position, betAmountWei, { gasLimit: 500000 });
       await tx.wait();
+
       setBetAmount(0.5);
       setTimeLeft(BET_TIMEOUT);
       setBetSuccess(true);
-      fetchVaultBalance();
+      await fetchVaultBalance();
+      await fetchActiveBet();
     } catch (err: any) {
-      console.error('Bet error:', err);
-      setError(err.reason || err.message || 'Failed to place bet');
+      console.error("Bet error:", err);
+      setError(err?.message || 'Failed to place bet');
     } finally {
-      setIsLoading(false);
+      setIsLoadingLong(false);
+      setIsLoadingShort(false);
     }
   };
+
+  useEffect(() => {
+    if (!activeBet?.startTime) return;
+
+    const interval = setInterval(() => {
+      const now = Math.floor(Date.now() / 1000);
+      const start = Number(activeBet.startTime);
+      const remaining = start + BET_TIMEOUT - now;
+
+      if (remaining <= 0) {
+        clearInterval(interval);
+        setActiveBetTimeLeft(null);
+        fetchActiveBet();
+        setActiveBet(null);
+      } else {
+        setActiveBetTimeLeft(Math.max(0, remaining));
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [activeBet]);
 
   return (
     <div className="p-2 w-full max-w-md mx-auto">
@@ -179,38 +272,30 @@ export const BettingForm = () => {
 
       {/* Messages */}
       {error && (
-        <div className="bg-red-700 text-white px-3 py-2 text-sm rounded mb-3">
-          {error}
-        </div>
-      )}
-      {timeLeft > 0 && (
-        <div className="text-center text-yellow-400 mb-3 text-sm">
-          Waiting for round: {timeLeft}s
-        </div>
+        <div className="bg-red-700 text-white px-3 py-2 text-sm rounded mb-3">{error}</div>
       )}
       {betSuccess && (
         <div className="bg-green-700 text-white px-3 py-2 text-sm rounded mb-3">
           Bet placed successfully!
         </div>
       )}
-
       {/* Buttons */}
       <div className="grid grid-cols-2 gap-3">
         <button
           type="button"
-          className={`px-4 py-3 rounded font-medium ${isLoading ? 'bg-gray-600 cursor-not-allowed' : 'bg-green-500 hover:bg-green-600'}`}
+          className={`px-4 py-3 rounded font-medium ${isLoadingLong ? 'bg-gray-600 cursor-not-allowed' : 'bg-green-500 hover:bg-green-600'}`}
           onClick={() => placeBet(0)}
-          disabled={isLoading}
+          disabled={isLoadingLong || isLoadingShort}
         >
-          {isLoading ? 'Processing...' : 'Long'}
+          {isLoadingLong ? 'Processing...' : 'Long'}
         </button>
         <button
           type="button"
-          className={`px-4 py-3 rounded font-medium ${isLoading ? 'bg-gray-600 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'}`}
+          className={`px-4 py-3 rounded font-medium ${isLoadingShort ? 'bg-gray-600 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'}`}
           onClick={() => placeBet(1)}
-          disabled={isLoading}
+          disabled={isLoadingShort || isLoadingLong}
         >
-          {isLoading ? 'Processing...' : 'Short'}
+          {isLoadingShort ? 'Processing...' : 'Short'}
         </button>
       </div>
 
@@ -218,6 +303,32 @@ export const BettingForm = () => {
       <div className="mt-6 text-right text-sm text-gray-400">
         Vault Balance: {parseFloat(vaultBalance).toFixed(4)} AVAX
       </div>
+
+      {/* Active Bet */}
+      {activeBet && (
+        <div className="mt-6 bg-stone-900 border border-stone-800 rounded-lg p-4 text-white">
+          <div className="text-md text-gray-400 mb-2">Active Bet</div>
+          <div className="flex justify-between items-center">
+            <div>
+              <div className="text-base font-semibold">Amount: <span className="font-light">{ethers.utils.formatEther(activeBet.amount)} AVAX</span></div>
+              <div className="text-base text-gray-500">
+                Position: <span className={`font-semibold ${activeBet.position === 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {activeBet.position === 0 ? 'Long' : 'Short'}
+                </span>
+              </div>
+              <div>
+              <div className="text-base text-gray-500">
+                Start Price: {activeBet.startPrice ? `$${(Number(activeBet.startPrice) / 1e18).toFixed(2)}` : '-'}
+              </div>
+              <span className="">
+                Remaining Time : {activeBetTimeLeft !== null ? `${activeBetTimeLeft}s` : '-'}
+              </span>
+            </div>
+            </div>
+            
+          </div>
+        </div>
+      )}
     </div>
   );
 };

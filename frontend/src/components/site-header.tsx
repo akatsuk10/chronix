@@ -29,7 +29,7 @@ export function SiteHeader() {
       const vault = new ethers.Contract(CONTRACTS.vault, VaultABI.abi, provider);
       const balance = await vault.getAVAXBalance(wallet.address);
       setVaultBalance(ethers.utils.formatEther(balance));
-    };
+    }; 
 
     fetchVaultBalance();
   }, [wallet.address, vaultOpen]); // refetch on modal close
