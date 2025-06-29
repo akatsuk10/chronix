@@ -3,20 +3,23 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSelector } from "react-redux";
+import { useAppKitAccount } from "@reown/appkit/react";
 import { RootState } from "@/store";
 import Link from "next/link";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
 import NeumorphWrapper from "@/components/ui/nuemorph-wrapper";
 
 export default function LandingPage() {
-  const wallet = useSelector((state: RootState) => state.wallet);
+  const { isConnected, address } = useAppKitAccount();
+  const isAuthenticated = useSelector((state: RootState) => state.wallet.isAuthenticated);
   const router = useRouter();
 
   useEffect(() => {
-    if (wallet.address) {
+    // Redirect to dashboard if user is connected and authenticated
+    if (isConnected && address && isAuthenticated) {
       router.push("/dashboard");
     }
-  }, [wallet.address]);
+  }, [isConnected, address, isAuthenticated, router]);
 
   return (
     <main className="min-h-screen bg-[#121212] text-white font-sans flex flex-col">
@@ -40,11 +43,14 @@ export default function LandingPage() {
           </div>
         </div>
 
-        <Link href={"/dashboard"} className="text-sm text-[#44FDB3] hover:text-[#5FFDBB] transition-colors">
-          <button className="ml-4 bg-[#44FDB3] text-black px-4 py-2 rounded-lg hover:bg-[#3ad6a0] transition-colors">
-            Get Started
-          </button>
-        </Link>
+        <div className="flex items-center gap-4">
+          <ConnectButton />
+          <Link href={"/dashboard"} className="text-sm text-[#44FDB3] hover:text-[#5FFDBB] transition-colors">
+            <button className="ml-4 bg-[#44FDB3] text-black px-4 py-2 rounded-lg hover:bg-[#3ad6a0] transition-colors">
+              Get Started
+            </button>
+          </Link>
+        </div>
 
       </header>
 
@@ -63,9 +69,8 @@ export default function LandingPage() {
       {/* Features Section */}
       <section id="features" className="grid grid-cols-1 sm:grid-cols-3 gap-6 px-6 md:py-8">
         {features.map((f, i) => (
-          <NeumorphWrapper>
+          <NeumorphWrapper key={i}>
             <div
-              key={i}
               className="bg-[#1C1C1C] text-white p-6 rounded-2xl transform transition-all"
             >
               <div className="text-3xl mb-4 text-[#5FFDBB]">{f.icon}</div>

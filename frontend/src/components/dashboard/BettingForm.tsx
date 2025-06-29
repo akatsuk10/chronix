@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
+import { useAppKitAccount } from "@reown/appkit/react";
+import { usePublicClient } from "wagmi";
 import VaultABI from '@/abis/Vault.json';
 import BTCBettingABI from '@/abis/BTCBetting.json';
 import { CONTRACTS } from '@/lib/contract/addresses';
@@ -11,9 +13,9 @@ const BET_TIMEOUT = 300;
 const BTC_USD_FEED = "0x31CF013A08c6Ac228C94551d535d5BAfE19c602a";
 
 export const BettingForm = () => {
+  const { address, isConnected } = useAppKitAccount();
+  const publicClient = usePublicClient();
   const wallet = useSelector((state: any) => state.wallet);
-  const [provider, setProvider] = useState<any>(null);
-  const [signer, setSigner] = useState<any>(null);
   const [vaultBalance, setVaultBalance] = useState<string>('0');
   const [poolBalance, setPoolBalance] = useState<string>('0');
   const [isLoadingLong, setIsLoadingLong] = useState(false);
@@ -27,23 +29,18 @@ export const BettingForm = () => {
   const [activeBetTimeLeft, setActiveBetTimeLeft] = useState<number | null>(null);
   const quickAmounts = [0.1, 0.5, 1];
 
-  useEffect(() => {
-    const setup = async () => {
-      if (window.ethereum) {
-        const p = new ethers.providers.Web3Provider(window.ethereum);
-        await p.send("eth_requestAccounts", []);
-        setProvider(p);
-        setSigner(p.getSigner());
-      }
-    };
-    setup();
-  }, []);
+  // Create provider from public client
+  const getProvider = () => {
+    if (!publicClient) return null;
+    return new ethers.providers.Web3Provider(publicClient as any);
+  };
 
   const fetchVaultBalance = async () => {
-    if (!provider || !wallet.address) return;
+    const provider = getProvider();
+    if (!provider || !address) return;
     try {
       const vault = new ethers.Contract(CONTRACTS.vault, VaultABI.abi, provider);
-      const bal = await vault.getAVAXBalance(wallet.address);
+      const bal = await vault.getAVAXBalance(address);
       setVaultBalance(ethers.utils.formatEther(bal));
     } catch (err) {
       console.error('Vault balance error:', err);
@@ -51,6 +48,7 @@ export const BettingForm = () => {
   };
 
   const fetchBTCPrice = async () => {
+    const provider = getProvider();
     if (!provider) return;
     try {
       const priceFeed = new ethers.Contract(
@@ -67,9 +65,10 @@ export const BettingForm = () => {
 
   const fetchActiveBet = async () => {
     try {
-      if (!provider || !wallet.address) return;
+      const provider = getProvider();
+      if (!provider || !address) return;
       const betting = new ethers.Contract(CONTRACTS.betting, BTCBettingABI.abi, provider);
-      const bet = await betting.getBet(wallet.address);
+      const bet = await betting.getBet(address);
 
       if (bet.settled) {
         setActiveBet(null);
@@ -84,12 +83,12 @@ export const BettingForm = () => {
   };
 
   useEffect(() => {
-    if (wallet.address && provider) {
+    if (address && publicClient) {
       fetchVaultBalance();
       fetchBTCPrice();
       fetchActiveBet();
     }
-  }, [wallet.address, provider]);
+  }, [address, publicClient]);
 
   useEffect(() => {
     if (timeLeft > 0) {
@@ -100,8 +99,10 @@ export const BettingForm = () => {
 
   const checkUserVaultBalance = async () => {
     try {
+      const provider = getProvider();
+      if (!provider || !address) return ethers.BigNumber.from(0);
       const vault = new ethers.Contract(CONTRACTS.vault, VaultABI.abi, provider);
-      return await vault.getAVAXBalance(wallet.address);
+      return await vault.getAVAXBalance(address);
     } catch {
       return ethers.BigNumber.from(0);
     }
@@ -109,8 +110,10 @@ export const BettingForm = () => {
 
   const checkUserActiveBet = async () => {
     try {
+      const provider = getProvider();
+      if (!provider || !address) return null;
       const betting = new ethers.Contract(CONTRACTS.betting, BTCBettingABI.abi, provider);
-      const bet = await betting.getBet(wallet.address);
+      const bet = await betting.getBet(address);
       return bet;
     } catch {
       return null;
@@ -119,6 +122,8 @@ export const BettingForm = () => {
 
   const checkPoolBalance = async () => {
     try {
+      const provider = getProvider();
+      if (!provider) return ethers.BigNumber.from(0);
       const betting = new ethers.Contract(CONTRACTS.betting, BTCBettingABI.abi, provider);
       const balance = await betting.poolBalance();
       setPoolBalance(ethers.utils.formatEther(balance));
@@ -134,7 +139,7 @@ export const BettingForm = () => {
       return;
     }
 
-    if (!signer || !betAmount || betAmount <= 0) {
+    if (!isConnected || !address || !betAmount || betAmount <= 0) {
       setError('Please enter a valid bet amount');
       return;
     }
@@ -175,8 +180,16 @@ export const BettingForm = () => {
         return;
       }
 
+      // Get signer from window.ethereum for transactions
+      if (!window.ethereum) {
+        setError('No wallet provider found');
+        return;
+      }
+
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
       const betting = new ethers.Contract(CONTRACTS.betting, BTCBettingABI.abi, signer);
-      const tx = await betting.placeBetFor(wallet.address, position, betAmountWei, { gasLimit: 500000 });
+      const tx = await betting.placeBetFor(address, position, betAmountWei, { gasLimit: 500000 });
       await tx.wait();
 
       setBetAmount(0.5);

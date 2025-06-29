@@ -23,6 +23,7 @@ model User {
 
   updatedAt     DateTime  @updatedAt
   sessions      Session[]
+  bets          Bet[]
 }
 
 model Session {
@@ -34,5 +35,22 @@ model Session {
   createdAt     DateTime @default(now())
 
   @@index([userId])
-} 
+}
+
+model Bet {
+  id           String   @id @default(cuid())
+  user         String
+  won          Boolean
+  startPrice   String
+  endPrice     String
+  position     Int      // 0 for down, 1 for up
+  txHash       String
+  blockNumber  Int
+  timestamp    DateTime @default(now())
+  userAddress  String
+  userRelation User     @relation(fields: [userAddress], references: [walletAddress], onDelete: Cascade)
+
+  @@index([userAddress])
+  @@index([timestamp])
+}
 

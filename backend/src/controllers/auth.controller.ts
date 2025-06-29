@@ -5,7 +5,7 @@ import prisma from "../lib/prisma";
 import { ethers } from "ethers";
 import crypto from "crypto";
 
-const MESSAGE = "Log in to MyDapp";
+const MESSAGE = "Welcome to Chronix.bet! 🚀\n\nSign this message to authenticate your wallet and access our decentralized prediction platform.\n\nBy signing, you agree to our Terms of Service and Privacy Policy.\n\nNonce: ";
 
 export const login = async (req: Request, res: Response): Promise<void> => {
   const { walletAddress, signature } = req.body as {
@@ -62,7 +62,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    if (!user.nonce) {
+    if (!user.nonce && !user.nonceSigned ) {
       res.status(400).json({ error: "Nonce not found. Please request a new nonce." });
       return;
     }

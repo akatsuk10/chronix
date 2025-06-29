@@ -1,20 +1,45 @@
 "use client"
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAppKitAccount } from "@reown/appkit/react";
+import { useSelector } from "react-redux";
+import { RootState } from "@/store";
+import { useAuthVerification } from "@/hooks/useAuthVerification";
+import LoadingScreen from "@/components/ui/loading-screen";
 import { SiteHeader } from "@/components/site-header"
 import { BettingForm } from "@/components/dashboard/BettingForm";
 import { TradingViewWidget } from "@/components/dashboard/TradingWidgetBTC";
-import { TradingViewWidgetETH } from "@/components/dashboard/TradingWidgetETH";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import  Deposit  from "@/components/deposit/Deposit"
-
 import {
   SidebarInset,
   SidebarProvider,
 } from "@/components/ui/sidebar"
-
-import data from "./data.json"
 import NeumorphWrapper from "@/components/ui/nuemorph-wrapper";
 
 export default function Page() {
+  const router = useRouter();
+  const { address, isConnected } = useAppKitAccount();
+  const isAuthenticated = useSelector((state: RootState) => state.wallet.isAuthenticated);
+  const { isVerifying, isAuthenticated: isTokenValid } = useAuthVerification();
+
+  useEffect(() => {
+    // Check if wallet is connected and authenticated
+    if (!isVerifying && (!isConnected || !address || !isTokenValid)) {
+      console.log("User not authenticated, redirecting to homepage...");
+      router.push("/");
+    }
+  }, [isConnected, address, isTokenValid, isVerifying, router]);
+
+  // Show loading screen while verifying tokens
+  if (isVerifying) {
+    return <LoadingScreen message="Verifying your session..." />;
+  }
+
+  // Don't render dashboard if not authenticated
+  if (!isConnected || !address || !isTokenValid) {
+    return null;
+  }
+
   return (
     <SidebarProvider
       style={
@@ -44,8 +69,8 @@ export default function Page() {
           </TabsContent>
 
           <TabsContent value="ETH" className="h-full flex gap-4">
-            <div className="h-[60vh] w-full rounded-lg overflow-hidden shadow-lg">
-              <TradingViewWidgetETH />
+            <div>
+               You will get the chance. We are buildingit 
             </div>
           </TabsContent>
         </Tabs>
