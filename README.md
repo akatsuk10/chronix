@@ -40,8 +40,7 @@ Chronix leverages Chainlink for:
 **Files using or referencing Chainlink:**
 
 ### Frontend
-- [`src/lib/datastrems/datastream.ts`](frontend/src/lib/datastrems/datastream.ts) — Uses `@hackbg/chainlink-datastreams-consumer` for Chainlink Data Streams.
-- [`src/components/contractIntreactions/GettingData.tsx`](frontend/src/components/contractIntreactions/GettingData.tsx) — UI for fetching Chainlink reports.
+
 - [`src/components/dashboard/LotteryStatus.tsx`](frontend/src/components/dashboard/LotteryStatus.tsx) — Mentions Chainlink VRF for lottery randomness.
 - [`src/app/page.tsx`](frontend/src/app/page.tsx) — Mentions Chainlink-powered lottery in the description.
 

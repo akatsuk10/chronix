@@ -2,9 +2,9 @@ const hre = require("hardhat");
 
 async function main() {
   const [deployer] = await hre.ethers.getSigners();
-  console.log("Deploying from:", deployer.address);
+  console.log("Deploying contracts with:", deployer.address);
 
-  // Chainlink feed addresses (Fuji)
+  // External feed addresses (update as needed)
   const BTC_FEED = "0x2779D32d5166BAaa2B2b658333bA7e6Ec0C65743";
   const AVAX_USD = "0x5498BB86BC934c8D34FDA08E81D444153d0D06aD";
   const EMCH_FEED = "0x0d2807dc7FA52d3B38be564B64a2b37753C49AdD";
@@ -15,26 +15,24 @@ async function main() {
   await vault.deployed();
   console.log("Vault deployed at:", vault.address);
 
-  // 2. Deploy CarbonCredit with feed addresses
+  // 2. Deploy CarbonCredit
   const CarbonCredit = await hre.ethers.getContractFactory("CarbonCredit");
-  const carbon = await CarbonCredit.deploy(AVAX_USD, EMCH_FEED, true); // ✅ for testnet
+  const carbon = await CarbonCredit.deploy(AVAX_USD, EMCH_FEED, true);
   await carbon.deployed();
   console.log("CarbonCredit deployed at:", carbon.address);
 
-  // 3. Deploy BTCBetting with BTC price feed
+  // 3. Deploy BTCBetting
   const BTCBetting = await hre.ethers.getContractFactory("BTCBetting");
-  const betting = await BTCBetting.deploy(BTC_FEED);
+  const betting = await BTCBetting.deploy();
   await betting.deployed();
   console.log("BTCBetting deployed at:", betting.address);
 
-  // 4. Deploy Lottery with VRF config
-  const subscriptionId = hre.ethers.BigNumber.from(
-    "101394378300481048569531429903084182062350173979824139452347975085728304527293"
-  ); // Replace with your real Chainlink subscription ID
+  // 4. Deploy Lottery
+  // Replace with your actual subscriptionId (uint64)
+  const subscriptionId = hre.ethers.BigNumber.from("101394378300481048569531429903084182062350173979824139452347975085728304527293");
   const WEEK_IN_SECONDS = 7 * 24 * 60 * 60;
-  const VRF_COORDINATOR = "0x5c210ef41cd1a72de73bf76ec39637bb0d3d7bee";
-  const KEY_HASH =
-    "0x354d2f95da55398f44b7cff77da56283d9c6c829a4bdf1bbcaf2ad6a4d081f61";
+  const VRF_COORDINATOR = "0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE";
+  const KEY_HASH = "0xc799bd1e3bd4d1a41cd4968997a4e03dfd2a3c7c04b695881138580163f42887";
 
   const Lottery = await hre.ethers.getContractFactory("Lottery");
   const lottery = await Lottery.deploy(
@@ -46,28 +44,38 @@ async function main() {
   await lottery.deployed();
   console.log("Lottery deployed at:", lottery.address);
 
-  // === Wiring contracts together ===
-  await carbon.setBettingContract(betting.address);
-  console.log("CarbonCredit: bettingContract set");
+  // === Wiring contracts ===
 
-  await betting.setLotteryContract(lottery.address);
-  console.log("Betting: lotteryContract set");
+  // 1. Set betting contract in Vault
+  let tx = await vault.setBettingContract(betting.address);
+  await tx.wait();
+  console.log("Vault wired to BTCBetting");
 
-  await betting.setCarbonContract(carbon.address);
-  console.log("Betting: carbonContract set");
+  // 2. Set betting contract in CarbonCredit
+  tx = await carbon.setBettingContract(betting.address);
+  await tx.wait();
+  console.log("CarbonCredit wired to BTCBetting");
 
-  await betting.setVault(vault.address); // ✅ NEW
-  console.log("Betting: vaultContract set");
+  // 3. Set betting contract in Lottery
+  tx = await lottery.setBettingContract(betting.address);
+  await tx.wait();
+  console.log("Lottery wired to BTCBetting");
 
-  await lottery.setBettingContract(betting.address);
-  console.log("Lottery: bettingContract set");
+  // 4. Initialize all dependencies in BTCBetting at once
+  tx = await betting.initializeContracts(
+    vault.address,
+    lottery.address,
+    carbon.address
+  );
+  await tx.wait();
+  console.log("BTCBetting initialized with Vault, Lottery, CarbonCredit");
 
-  // ✅ Final output
-  console.log("\n✅ Deployment complete!");
-  console.log("vault:", vault.address);
-  console.log("carbonCredit:", carbon.address);
-  console.log("betting:", betting.address);
-  console.log("lottery:", lottery.address);
+  // === Done ===
+  console.log("\n✅ Deployment and wiring complete!");
+  console.log("Vault:        ", vault.address);
+  console.log("CarbonCredit: ", carbon.address);
+  console.log("BTCBetting:   ", betting.address);
+  console.log("Lottery:      ", lottery.address);
 }
 
 main().catch((error) => {
