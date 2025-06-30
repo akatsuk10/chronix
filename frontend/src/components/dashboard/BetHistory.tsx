@@ -45,7 +45,7 @@ export const BetHistory = () => {
 
   const formatPrice = (price: string) => {
     try {
-      return `$${parseFloat(price) / 1e8}`; // Assuming 8 decimals for price feed
+      return `$${parseFloat(price) / 1e18}`; // Assuming 8 decimals for price feed
     } catch {
       return price;
     }

@@ -28,7 +28,6 @@ export const BettingForm = () => {
   const [activeBetTimeLeft, setActiveBetTimeLeft] = useState<number | null>(null);
   const quickAmounts = [0.1, 0.5, 1];
 
-  // Create provider from public client
   const getProvider = () => {
     if (!publicClient) return null;
     return new ethers.providers.Web3Provider(publicClient as any);
@@ -54,20 +53,35 @@ export const BettingForm = () => {
     try {
       const provider = getProvider();
       if (!provider || !address) return;
+
       const betting = new ethers.Contract(CONTRACTS.betting, BTCBettingABI.abi, provider);
       const bet = await betting.getBet(address);
 
-      if (bet.settled) {
+      if (bet.settled || ethers.BigNumber.from(bet.amount).eq(0)) {
         setActiveBet(null);
         setActiveBetTimeLeft(null);
         return;
       }
-      setActiveBet(bet);
+
+      const now = Math.floor(Date.now() / 1000);
+      const startTime = Number(bet.startTime);
+      const timeLeft = startTime + BET_TIMEOUT - now;
+
+      if (timeLeft <= 0) {
+        setActiveBet(null);
+        setActiveBetTimeLeft(null);
+        return;
+      }
+
+      setActiveBet({ ...bet });
+      setActiveBetTimeLeft(timeLeft);
     } catch (err: any) {
       console.error('Fetch active bet error:', err);
       setActiveBet(null);
+      setActiveBetTimeLeft(null);
     }
   };
+
 
   useEffect(() => {
     if (address && publicClient) {
@@ -100,8 +114,7 @@ export const BettingForm = () => {
       const provider = getProvider();
       if (!provider || !address) return null;
       const betting = new ethers.Contract(CONTRACTS.betting, BTCBettingABI.abi, provider);
-      const bet = await betting.getBet(address);
-      return bet;
+      return await betting.getBet(address);
     } catch {
       return null;
     }
@@ -119,6 +132,23 @@ export const BettingForm = () => {
       return ethers.BigNumber.from(0);
     }
   };
+
+  const retryUntilActiveBet = async (maxTries = 3, delay = 1000) => {
+  let tries = 0;
+  while (tries < maxTries) {
+    await fetchActiveBet();
+    const hasBet =
+      activeBet &&
+      !activeBet.settled &&
+      ethers.BigNumber.from(activeBet.amount).gt(0) &&
+      ethers.BigNumber.from(activeBet.startPrice).gt(0);
+
+    if (hasBet) break;
+    await new Promise((res) => setTimeout(res, delay));
+    tries++;
+  }
+};
+
 
   const placeBet = async (position: number) => {
     if (timeLeft > 0) {
@@ -138,8 +168,6 @@ export const BettingForm = () => {
 
     setError('');
     setBetSuccess(false);
-
-    // Set loading state based on position
     if (position === 0) setIsLoadingLong(true);
     else setIsLoadingShort(true);
 
@@ -153,16 +181,10 @@ export const BettingForm = () => {
       }
 
       const active = await checkUserActiveBet();
-      if (
-        active &&
-        !active.settled &&
-        active.amount &&
-        ethers.BigNumber.from(active.amount).gt(0)
-      ) {
+      if (active && !active.settled && ethers.BigNumber.from(active.amount).gt(0)) {
         setError(`You already have an active bet.`);
         return;
       }
-      
 
       const poolBal = await checkPoolBalance();
       if (poolBal.lt(betAmountWei)) {
@@ -170,7 +192,6 @@ export const BettingForm = () => {
         return;
       }
 
-      // Get signer from window.ethereum for transactions
       if (!window.ethereum) {
         setError('No wallet provider found');
         return;
@@ -186,7 +207,7 @@ export const BettingForm = () => {
       setTimeLeft(BET_TIMEOUT);
       setBetSuccess(true);
       await fetchVaultBalance();
-      await fetchActiveBet();
+      await retryUntilActiveBet();
     } catch (err: any) {
       console.error("Bet error:", err);
       setError(err?.message || 'Failed to place bet');
@@ -216,6 +237,12 @@ export const BettingForm = () => {
 
     return () => clearInterval(interval);
   }, [activeBet]);
+
+  const hasValidActiveBet =
+    activeBet &&
+    !activeBet.settled &&
+    ethers.BigNumber.from(activeBet.amount).gt(0) &&
+    ethers.BigNumber.from(activeBet.startPrice).gt(0);
 
   return (
     <div className="p-2 w-full max-w-md mx-auto">
@@ -282,6 +309,7 @@ export const BettingForm = () => {
           Bet placed successfully!
         </div>
       )}
+
       {/* Buttons */}
       <div className="grid grid-cols-2 gap-3">
         <button
@@ -308,25 +336,27 @@ export const BettingForm = () => {
       </div>
 
       {/* Active Bet */}
-      {activeBet && !activeBet.settled && activeBet.amount && ethers.BigNumber.from(activeBet.amount).gt(0) && (
+      {hasValidActiveBet && (
         <div className="mt-6 bg-stone-900 border border-stone-800 rounded-lg p-4 text-white">
           <div className="text-md text-gray-400 mb-2">Active Bet</div>
           <div className="flex justify-between items-center">
             <div>
-              <div className="text-base font-semibold">Amount: <span className="font-light">{ethers.utils.formatEther(activeBet.amount)} AVAX</span></div>
+              <div className="text-base font-semibold">
+                Amount: <span className="font-light">{ethers.utils.formatEther(activeBet.amount)} AVAX</span>
+              </div>
               <div className="text-base text-gray-500">
                 Position: <span className={`font-semibold ${activeBet.position === 0 ? 'text-green-400' : 'text-red-400'}`}>{activeBet.position === 0 ? 'Long' : 'Short'}</span>
               </div>
-              <div>
               <div className="text-base text-gray-500">
-                Start Price: {activeBet.startPrice ? `$${(Number(activeBet.startPrice) / 1e18).toFixed(2)}` : '-'}
+                Start Price: {activeBet.startPrice
+                  ? `$${Number(ethers.utils.formatUnits(activeBet.startPrice, 18)).toFixed(2)}`
+                  : '...'}
               </div>
-              <span className="">
-                Remaining Time : {activeBetTimeLeft !== null ? `${activeBetTimeLeft}s` : '-'}
+
+              <span className="text-sm text-gray-400">
+                Remaining Time: {activeBetTimeLeft !== null ? `${activeBetTimeLeft}s` : '...'}
               </span>
             </div>
-            </div>
-            
           </div>
         </div>
       )}
