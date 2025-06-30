@@ -6,6 +6,8 @@ import { ethers } from "ethers";
 import { CONTRACTS } from "@/lib/contract/addresses";
 import VaultABI from "@/abis/Vault.json";
 import { X } from "lucide-react";
+import { useDispatch } from "react-redux";
+import { setVaultBalance } from "@/store/slices/walletSlice";
 
 export function VaultModal({
   isOpen,
@@ -19,6 +21,20 @@ export function VaultModal({
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(false);
   const [action, setAction] = useState<"deposit" | "withdraw">("deposit");
+  const dispatch = useDispatch();
+
+  const fetchVaultBalance = async () => {
+    if (!signer) return;
+    try {
+      const provider = signer.provider;
+      const vault = new ethers.Contract(CONTRACTS.vault, VaultABI.abi, provider);
+      const address = await signer.getAddress();
+      const balance = await vault.getAVAXBalance(address);
+      dispatch(setVaultBalance(ethers.utils.formatEther(balance)));
+    } catch (err) {
+      console.error("Error fetching vault balance:", err);
+    }
+  };
 
   const handleAction = async () => {
     if (!signer || parseFloat(amount) <= 0) return;
@@ -34,6 +50,10 @@ export function VaultModal({
           : await vault.withdrawAVAX(parsedAmount);
 
       await tx.wait();
+      
+      // Update vault balance in Redux store
+      await fetchVaultBalance();
+      
       onClose();
     } catch (err) {
       console.error("Vault action error:", err);

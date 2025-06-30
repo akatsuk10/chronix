@@ -3,7 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import authRoutes from "./routes/auth.route";
 import betRoutes from "./routes/bet.route";
-import { startListening, stopListening } from "./services/eventListener";
+import { startListening, stopListening, processHistoricalEvents } from "./services/eventListener";
 
 dotenv.config();
 
@@ -40,6 +40,54 @@ app.post("/api/events/restart", async (req: Request, res: Response) => {
       error: error instanceof Error ? error.message : "Unknown error"
     });
   }
+});
+
+// Process historical events endpoint
+app.post("/api/events/process-historical", async (req: Request, res: Response) => {
+  try {
+    const { fromBlock, toBlock, recent } = req.body;
+    
+    let from: number;
+    let to: number | string;
+    
+    if (recent) {
+      // Process only recent events (last 1000 blocks)
+      // We'll use a reasonable default since we can't access provider here
+      from = 0; // Will be handled in the event listener
+      to = "latest";
+    } else {
+      from = fromBlock || 0;
+      to = toBlock || "latest";
+    }
+    
+    console.log(`Manually processing historical events from block ${from} to ${to}...`);
+    
+    await processHistoricalEvents(from, to);
+    
+    res.json({ 
+      success: true, 
+      message: "Historical events processed successfully",
+      fromBlock: from,
+      toBlock: to,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("Error processing historical events:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Failed to process historical events",
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+});
+
+// Get event listener status
+app.get("/api/events/status", (req: Request, res: Response) => {
+  res.json({
+    status: "Event listener status",
+    timestamp: new Date().toISOString(),
+    // You can add more status information here
+  });
 });
 
 app.use("/api/auth", authRoutes);

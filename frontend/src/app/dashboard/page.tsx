@@ -5,9 +5,12 @@ import { useAppKitAccount } from "@reown/appkit/react";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
 import { useAuthVerification } from "@/hooks/useAuthVerification";
+import { useVaultBalance } from "@/hooks/useVaultBalance";
 import LoadingScreen from "@/components/ui/loading-screen";
 import { SiteHeader } from "@/components/site-header"
 import { BettingForm } from "@/components/dashboard/BettingForm";
+import { BetHistory } from "@/components/dashboard/BetHistory";
+
 import { TradingViewWidget } from "@/components/dashboard/TradingWidgetBTC";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -21,6 +24,7 @@ export default function Page() {
   const { address, isConnected } = useAppKitAccount();
   const isAuthenticated = useSelector((state: RootState) => state.wallet.isAuthenticated);
   const { isVerifying, isAuthenticated: isTokenValid } = useAuthVerification();
+  const { fetchVaultBalance } = useVaultBalance();
 
   useEffect(() => {
     // Check if wallet is connected and authenticated
@@ -29,6 +33,13 @@ export default function Page() {
       router.push("/");
     }
   }, [isConnected, address, isTokenValid, isVerifying, router]);
+
+  // Refresh vault balance when component mounts
+  useEffect(() => {
+    if (isConnected && address) {
+      fetchVaultBalance();
+    }
+  }, [isConnected, address, fetchVaultBalance]);
 
   // Show loading screen while verifying tokens
   if (isVerifying) {
@@ -53,33 +64,40 @@ export default function Page() {
         <SiteHeader />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 gap-2">
-          <main className="flex-1 h-full w-full p-4">
-        <Tabs defaultValue="BTC" className="h-full">
-          <TabsList>
-            <TabsTrigger value="BTC">BTC</TabsTrigger>
-            <TabsTrigger value="ETH">ETH</TabsTrigger>
-            <TabsTrigger value="SOL">SOL</TabsTrigger>
-            <TabsTrigger value="TRON">TRON</TabsTrigger>
-          </TabsList>
+            <main className="flex-1 h-full w-full p-4">
+              <Tabs defaultValue="BTC" className="h-full">
+                <TabsList>
+                  <TabsTrigger value="BTC">BTC</TabsTrigger>
+                  <TabsTrigger value="ETH">ETH</TabsTrigger>
+                  <TabsTrigger value="SOL">SOL</TabsTrigger>
+                  <TabsTrigger value="TRON">TRON</TabsTrigger>
+                </TabsList>
 
-          <TabsContent value="BTC" className="h-full flex gap-4">
-            <div className="h-[60vh] w-full rounded-lg overflow-hidden shadow-lg">
-              <TradingViewWidget />
-            </div>
-          </TabsContent>
+                <TabsContent value="BTC" className="h-full flex gap-4">
+                  <div className="h-[60vh] w-full rounded-lg overflow-hidden shadow-lg">
+                    <TradingViewWidget />
+                  </div>
+                </TabsContent>
 
-          <TabsContent value="ETH" className="h-full flex gap-4">
-            <div>
-               You will get the chance. We are buildingit 
+                <TabsContent value="ETH" className="h-full flex gap-4">
+                  <div>
+                     You will get the chance. We are buildingit 
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </main>
+            <div className="w-[26%] h-90vh m-4">
+              <NeumorphWrapper className="p-4">
+                <BettingForm />
+              </NeumorphWrapper>
             </div>
-          </TabsContent>
-        </Tabs>
-      </main>
-      <div className="w-[26%] h-90vh m-4">
-        <NeumorphWrapper className="p-4">
-              <BettingForm />
-        </NeumorphWrapper>
-            </div>
+          </div>
+          
+          {/* Bet History Section */}
+          <div className="p-4">
+            <NeumorphWrapper className="p-6">
+              <BetHistory />
+            </NeumorphWrapper>
           </div>
         </div>
       </SidebarInset>

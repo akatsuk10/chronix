@@ -9,30 +9,36 @@ import { useEffect, useState } from "react";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
 import { ethers } from "ethers";
-import VaultABI from "@/abis/Vault.json";
-import { CONTRACTS } from "@/lib/contract/addresses";
+import { useVaultBalance } from "@/hooks/useVaultBalance";
 
 export function SiteHeader() {
   const wallet = useSelector((state: RootState) => state.wallet);
-  const [vaultBalance, setVaultBalance] = useState("0");
   const [vaultOpen, setVaultOpen] = useState(false);
   const [signer, setSigner] = useState<ethers.Signer | null>(null);
+  const { fetchVaultBalance } = useVaultBalance();
 
   useEffect(() => {
-    const fetchVaultBalance = async () => {
+    const setupSigner = async () => {
       if (!wallet.address || typeof window === "undefined" || !window.ethereum) return;
 
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const signer = provider.getSigner();
-      setSigner(signer);
+      try {
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        const signer = provider.getSigner();
+        setSigner(signer);
+      } catch (err) {
+        console.error("Error setting up signer:", err);
+      }
+    };
 
-      const vault = new ethers.Contract(CONTRACTS.vault, VaultABI.abi, provider);
-      const balance = await vault.getAVAXBalance(wallet.address);
-      setVaultBalance(ethers.utils.formatEther(balance));
-    }; 
+    setupSigner();
+  }, [wallet.address]);
 
-    fetchVaultBalance();
-  }, [wallet.address, vaultOpen]); // refetch on modal close
+  // Refresh vault balance when modal closes
+  useEffect(() => {
+    if (!vaultOpen && wallet.address) {
+      fetchVaultBalance();
+    }
+  }, [vaultOpen, fetchVaultBalance]);
 
   return (
     <header className="flex bg-[#1c1c1c] h-[70px] shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
@@ -52,7 +58,7 @@ export function SiteHeader() {
 
         <div className="ml-auto flex items-center gap-3">
             <div className="flex items-center text-white text-sm bg-stone-900 px-3 py-2 rounded-full border border-stone-700">
-              {parseFloat(vaultBalance).toFixed(3)} AVAX
+              {parseFloat(wallet.vaultBalance).toFixed(3)} AVAX
               <button
                 onClick={() => setVaultOpen(true)}
                 className="ml-2 w-6 h-6 rounded-full bg-[#44FDB3] text-black font-bold text-sm leading-none flex items-center justify-center"
@@ -69,7 +75,11 @@ export function SiteHeader() {
       </div>
 
       {/* Vault Modal */}
-      <VaultModal isOpen={vaultOpen} onClose={() => setVaultOpen(false)} signer={signer} />
+      <VaultModal
+        isOpen={vaultOpen}
+        onClose={() => setVaultOpen(false)}
+        signer={signer}
+      />
     </header>
   );
 }

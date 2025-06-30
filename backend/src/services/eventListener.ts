@@ -12,6 +12,7 @@ let lastProcessedBlock = 0;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY = 5000; // 5 seconds
+const MAX_BLOCK_RANGE = 2000; // Maximum blocks to query at once (under 2048 limit)
 
 // Track pending bets with their positions
 const pendingBets = new Map<string, { position: number; amount: string; blockNumber: number }>();
@@ -162,7 +163,7 @@ async function processBetPlacedEvent(event: any) {
   }
 }
 
-// Polling fallback for when event listeners fail
+// Improved polling fallback with better error handling and block range limits
 async function startPolling() {
   console.log("Starting polling fallback for events...");
   
@@ -180,42 +181,84 @@ async function startPolling() {
       }
 
       if (currentBlock > lastProcessedBlock) {
-        console.log(`Polling blocks ${lastProcessedBlock + 1} to ${currentBlock}`);
+        // Limit the block range to avoid "too many blocks" error
+        const fromBlock = lastProcessedBlock + 1;
+        const toBlock = Math.min(currentBlock, fromBlock + MAX_BLOCK_RANGE - 1);
         
-        // Query both BetPlaced and BetSettled events
-        const betPlacedEvents = await contract.queryFilter(
-          contract.filters.BetPlaced(),
-          lastProcessedBlock + 1,
-          currentBlock
-        );
+        console.log(`Polling blocks ${fromBlock} to ${toBlock} (limited range)`);
+        
+        try {
+          // Query both BetPlaced and BetSettled events with error handling
+          const betPlacedEvents = await contract.queryFilter(
+            contract.filters.BetPlaced(),
+            fromBlock,
+            toBlock
+          );
 
-        const betSettledEvents = await contract.queryFilter(
-          contract.filters.BetSettled(),
-          lastProcessedBlock + 1,
-          currentBlock
-        );
+          const betSettledEvents = await contract.queryFilter(
+            contract.filters.BetSettled(),
+            fromBlock,
+            toBlock
+          );
 
-        // Process BetPlaced events first to track positions
-        for (const event of betPlacedEvents) {
-          await processBetPlacedEvent(event);
+          console.log(`Found ${betPlacedEvents.length} BetPlaced events and ${betSettledEvents.length} BetSettled events`);
+
+          // Process BetPlaced events first to track positions
+          for (const event of betPlacedEvents) {
+            await processBetPlacedEvent(event);
+          }
+
+          // Then process BetSettled events
+          for (const event of betSettledEvents) {
+            await processEvent(event);
+          }
+
+          lastProcessedBlock = toBlock;
+        } catch (filterError) {
+          console.error("Filter query error, trying alternative approach:", filterError);
+          
+          // Alternative: Query all events and filter manually
+          try {
+            const allEvents = await contract.queryFilter(
+              null as any, // Query all events
+              fromBlock,
+              toBlock
+            );
+            
+            for (const event of allEvents) {
+              // Check if it's a BetPlaced or BetSettled event by trying to parse it
+              try {
+                const parsedEvent = contract.interface.parseLog(event);
+                if (parsedEvent) {
+                  if (parsedEvent.name === 'BetPlaced') {
+                    await processBetPlacedEvent(event);
+                  } else if (parsedEvent.name === 'BetSettled') {
+                    await processEvent(event);
+                  }
+                }
+              } catch (parseError) {
+                // Skip events that can't be parsed (not from our contract)
+                continue;
+              }
+            }
+            
+            lastProcessedBlock = toBlock;
+          } catch (altError) {
+            console.error("Alternative query also failed:", altError);
+            // Don't update lastProcessedBlock to retry later
+          }
         }
-
-        // Then process BetSettled events
-        for (const event of betSettledEvents) {
-          await processEvent(event);
-        }
-
-        lastProcessedBlock = currentBlock;
       }
     } catch (error) {
       console.error("Error in polling:", error);
+      // Don't update lastProcessedBlock to retry later
     }
-  }, 10000); // Poll every 10 seconds
+  }, 15000); // Poll every 15 seconds (increased interval)
 
   return pollInterval;
 }
 
-// Start listening for events with error handling and reconnection
+// Start listening for events with improved error handling
 export async function startListening() {
   if (isListening) {
     console.log("Event listener is already running");
@@ -233,15 +276,16 @@ export async function startListening() {
   // Get current block number for polling fallback
   try {
     lastProcessedBlock = await provider.getBlockNumber();
+    console.log(`Starting from block: ${lastProcessedBlock}`);
   } catch (error) {
     console.error("Error getting current block number:", error);
     lastProcessedBlock = 0;
   }
 
-  // Start polling as fallback
+  // Start polling as primary method (more reliable than event listeners)
   const pollInterval = await startPolling();
 
-  // Set up event listeners with error handling
+  // Set up event listeners as backup (but don't rely on them due to filter issues)
   const setupEventListeners = () => {
     try {
       // Listen for BetPlaced events to track positions
@@ -319,7 +363,7 @@ export async function startListening() {
 
     } catch (error) {
       console.error("Error setting up event listeners:", error);
-      handleReconnection();
+      // Don't call handleReconnection here as polling is the primary method
     }
   };
 
@@ -377,39 +421,67 @@ export async function stopListening() {
   console.log("Event listener stopped");
 }
 
-// Process historical events
+// Process historical events with block range limits
 export async function processHistoricalEvents(fromBlock: number, toBlock: number | string = "latest") {
   if (!provider || !contract) {
     initialize();
   }
 
   try {
-    console.log(`Processing historical events from block ${fromBlock} to ${toBlock}`);
+    let endBlock: number;
     
-    // Process BetPlaced events first to build position tracking
-    const betPlacedEvents = await contract.queryFilter(
-      contract.filters.BetPlaced(),
-      fromBlock,
-      toBlock
-    );
-
-    console.log(`Found ${betPlacedEvents.length} historical BetPlaced events`);
-
-    for (const event of betPlacedEvents) {
-      await processBetPlacedEvent(event);
+    if (toBlock === "latest") {
+      endBlock = await provider.getBlockNumber();
+    } else {
+      endBlock = toBlock as number;
     }
 
-    // Then process BetSettled events
-    const betSettledEvents = await contract.queryFilter(
-      contract.filters.BetSettled(),
-      fromBlock,
-      toBlock
-    );
+    console.log(`Processing historical events from block ${fromBlock} to ${endBlock}`);
+    
+    // Process in chunks to avoid "too many blocks" error
+    let currentBlock = fromBlock;
+    
+    while (currentBlock < endBlock) {
+      const chunkEndBlock = Math.min(currentBlock + MAX_BLOCK_RANGE - 1, endBlock);
+      
+      console.log(`Processing chunk: blocks ${currentBlock} to ${chunkEndBlock}`);
+      
+      try {
+        // Process BetPlaced events first to build position tracking
+        const betPlacedEvents = await contract.queryFilter(
+          contract.filters.BetPlaced(),
+          currentBlock,
+          chunkEndBlock
+        );
 
-    console.log(`Found ${betSettledEvents.length} historical BetSettled events`);
+        console.log(`Found ${betPlacedEvents.length} BetPlaced events in chunk`);
 
-    for (const event of betSettledEvents) {
-      await processEvent(event);
+        for (const event of betPlacedEvents) {
+          await processBetPlacedEvent(event);
+        }
+
+        // Then process BetSettled events
+        const betSettledEvents = await contract.queryFilter(
+          contract.filters.BetSettled(),
+          currentBlock,
+          chunkEndBlock
+        );
+
+        console.log(`Found ${betSettledEvents.length} BetSettled events in chunk`);
+
+        for (const event of betSettledEvents) {
+          await processEvent(event);
+        }
+        
+        currentBlock = chunkEndBlock + 1;
+        
+        // Small delay between chunks to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+      } catch (error) {
+        console.error(`Error processing chunk ${currentBlock} to ${chunkEndBlock}:`, error);
+        currentBlock = chunkEndBlock + 1; // Move to next chunk even if this one failed
+      }
     }
 
     console.log("Historical events processing completed");

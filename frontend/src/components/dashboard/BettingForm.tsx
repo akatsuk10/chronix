@@ -7,7 +7,7 @@ import { usePublicClient } from "wagmi";
 import VaultABI from '@/abis/Vault.json';
 import BTCBettingABI from '@/abis/BTCBetting.json';
 import { CONTRACTS } from '@/lib/contract/addresses';
-import { useSelector } from "react-redux";
+import { useVaultBalance } from "@/hooks/useVaultBalance";
 
 const BET_TIMEOUT = 300;
 const BTC_USD_FEED = "0x31CF013A08c6Ac228C94551d535d5BAfE19c602a";
@@ -15,8 +15,7 @@ const BTC_USD_FEED = "0x31CF013A08c6Ac228C94551d535d5BAfE19c602a";
 export const BettingForm = () => {
   const { address, isConnected } = useAppKitAccount();
   const publicClient = usePublicClient();
-  const wallet = useSelector((state: any) => state.wallet);
-  const [vaultBalance, setVaultBalance] = useState<string>('0');
+  const { vaultBalance, fetchVaultBalance } = useVaultBalance();
   const [poolBalance, setPoolBalance] = useState<string>('0');
   const [isLoadingLong, setIsLoadingLong] = useState(false);
   const [isLoadingShort, setIsLoadingShort] = useState(false);
@@ -33,18 +32,6 @@ export const BettingForm = () => {
   const getProvider = () => {
     if (!publicClient) return null;
     return new ethers.providers.Web3Provider(publicClient as any);
-  };
-
-  const fetchVaultBalance = async () => {
-    const provider = getProvider();
-    if (!provider || !address) return;
-    try {
-      const vault = new ethers.Contract(CONTRACTS.vault, VaultABI.abi, provider);
-      const bal = await vault.getAVAXBalance(address);
-      setVaultBalance(ethers.utils.formatEther(bal));
-    } catch (err) {
-      console.error('Vault balance error:', err);
-    }
   };
 
   const fetchBTCPrice = async () => {
