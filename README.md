@@ -1,6 +1,6 @@
 # Chronix - Decentralized Betting Platform
 
-A comprehensive decentralized betting platform built with Next.js, Node.js, and Solidity smart contracts. Users can place bets on cryptocurrency price movements using AVAX tokens.
+A comprehensive decentralized betting platform built with Next.js, Node.js, and Solidity smart contracts. Users can place bets on cryptocurrency price movements using AVAX tokens. **Chainlink** is used for secure price feeds, randomness, and data streams throughout the stack.
 
 ## 🏗️ Architecture
 
@@ -11,6 +11,7 @@ A comprehensive decentralized betting platform built with Next.js, Node.js, and 
 - **Wallet Integration**: Reown AppKit
 - **Charts**: TradingView Widget
 - **UI Components**: Custom neumorphic design system
+- **Chainlink**: Data Streams, price feeds, and lottery randomness
 
 ### Backend (Node.js)
 - **Framework**: Express.js with TypeScript
@@ -18,11 +19,39 @@ A comprehensive decentralized betting platform built with Next.js, Node.js, and 
 - **Authentication**: JWT tokens
 - **Blockchain Integration**: Ethers.js
 - **Event Listening**: Real-time blockchain event processing
+- **Chainlink**: Listens to contract events powered by Chainlink
 
 ### Smart Contracts (Solidity)
 - **Framework**: Hardhat
 - **Network**: Avalanche Fuji Testnet
 - **Contracts**: Betting, Vault, Carbon Credits, Lottery
+- **Chainlink**: VRF, Price Feeds, Automation, Functions
+
+---
+
+## 🔗 Chainlink Integration
+
+Chronix leverages Chainlink for:
+- **Price Feeds** (secure, decentralized market data)
+- **VRF** (verifiable randomness for lotteries)
+- **Automation** (automated contract execution)
+- **Functions/Data Streams** (off-chain computation and data)
+
+**Files using or referencing Chainlink:**
+
+### Frontend
+- [`src/lib/datastrems/datastream.ts`](frontend/src/lib/datastrems/datastream.ts) — Uses `@hackbg/chainlink-datastreams-consumer` for Chainlink Data Streams.
+- [`src/components/contractIntreactions/GettingData.tsx`](frontend/src/components/contractIntreactions/GettingData.tsx) — UI for fetching Chainlink reports.
+- [`src/components/dashboard/LotteryStatus.tsx`](frontend/src/components/dashboard/LotteryStatus.tsx) — Mentions Chainlink VRF for lottery randomness.
+- [`src/app/page.tsx`](frontend/src/app/page.tsx) — Mentions Chainlink-powered lottery in the description.
+
+### Smart Contracts
+- [`smartcontract/contracts/LotteryContract.sol`](smartcontract/contracts/LotteryContract.sol) — Imports Chainlink VRF and Automation contracts.
+- [`smartcontract/contracts/CarbonCredit.sol`](smartcontract/contracts/CarbonCredit.sol) — Imports Chainlink AggregatorV3Interface for price feeds.
+- [`smartcontract/contracts/BettingNew.sol`](smartcontract/contracts/BettingNew.sol) — Imports Chainlink Automation, Functions, and Owner contracts; references Chainlink Data Streams API.
+- [`smartcontract/scripts/deploy.js`](smartcontract/scripts/deploy.js) — References Chainlink feed addresses and subscription IDs.
+
+---
 
 ## 📁 Project Structure
 
@@ -341,4 +370,4 @@ Stay updated with the latest changes:
 
 ---
 
-**Note**: This is a testnet deployment. For mainnet deployment, ensure all security measures are in place and contracts are thoroughly audited. 
+**Note**: This is a testnet deployment. For mainnet deployment, ensure all security measures are in place and contracts are thoroughly audited.
