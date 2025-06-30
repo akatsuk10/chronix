@@ -154,11 +154,14 @@ export const BettingForm = () => {
 
       const active = await checkUserActiveBet();
       if (
-        active && !active.settled
+        active &&
+        !active.settled &&
+        active.amount &&
+        ethers.BigNumber.from(active.amount).gt(0)
       ) {
-          setError(`You already have an active bet.`);
-          return;
-        }
+        setError(`You already have an active bet.`);
+        return;
+      }
       
 
       const poolBal = await checkPoolBalance();
@@ -305,16 +308,14 @@ export const BettingForm = () => {
       </div>
 
       {/* Active Bet */}
-      {activeBet && (
+      {activeBet && !activeBet.settled && activeBet.amount && ethers.BigNumber.from(activeBet.amount).gt(0) && (
         <div className="mt-6 bg-stone-900 border border-stone-800 rounded-lg p-4 text-white">
           <div className="text-md text-gray-400 mb-2">Active Bet</div>
           <div className="flex justify-between items-center">
             <div>
               <div className="text-base font-semibold">Amount: <span className="font-light">{ethers.utils.formatEther(activeBet.amount)} AVAX</span></div>
               <div className="text-base text-gray-500">
-                Position: <span className={`font-semibold ${activeBet.position === 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {activeBet.position === 0 ? 'Long' : 'Short'}
-                </span>
+                Position: <span className={`font-semibold ${activeBet.position === 0 ? 'text-green-400' : 'text-red-400'}`}>{activeBet.position === 0 ? 'Long' : 'Short'}</span>
               </div>
               <div>
               <div className="text-base text-gray-500">

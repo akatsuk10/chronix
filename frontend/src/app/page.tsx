@@ -45,11 +45,11 @@ export default function LandingPage() {
 
         <div className="flex items-center gap-4">
           <ConnectButton />
-          <Link href={"/dashboard"} className="text-sm text-[#44FDB3] hover:text-[#5FFDBB] transition-colors">
+          {/* <Link href={"/dashboard"} className="text-sm text-[#44FDB3] hover:text-[#5FFDBB] transition-colors">
             <button className="ml-4 bg-[#44FDB3] text-black px-4 py-2 rounded-lg hover:bg-[#3ad6a0] transition-colors">
               Get Started
             </button>
-          </Link>
+          </Link> */}
         </div>
 
       </header>

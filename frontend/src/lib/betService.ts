@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000";
 
 export interface Bet {
   id: string;
@@ -47,7 +47,7 @@ export async function getAllBets(page: number = 1, limit: number = 20, userAddre
     params.append('userAddress', userAddress);
   }
 
-  const response = await fetch(`${API_URL}/bets?${params}`);
+  const response = await fetch(`${API_URL}/api/bets?${params}`);
   if (!response.ok) throw new Error("Failed to fetch bets");
   return response.json();
 }
@@ -59,7 +59,7 @@ export async function getUserBets(userAddress: string, page: number = 1, limit: 
     limit: limit.toString()
   });
 
-  const response = await fetch(`${API_URL}/bets/user/${userAddress}?${params}`);
+  const response = await fetch(`${API_URL}/api/bets/user/${userAddress}?${params}`);
   if (!response.ok) throw new Error("Failed to fetch user bets");
   return response.json();
 }
@@ -67,7 +67,7 @@ export async function getUserBets(userAddress: string, page: number = 1, limit: 
 // Get betting statistics
 export async function getBetStats(userAddress?: string): Promise<BetStats> {
   const params = userAddress ? new URLSearchParams({ userAddress }) : '';
-  const response = await fetch(`${API_URL}/bets/stats?${params}`);
+  const response = await fetch(`${API_URL}/api/bets/stats?${params}`);
   if (!response.ok) throw new Error("Failed to fetch bet stats");
   return response.json();
 }
@@ -75,7 +75,7 @@ export async function getBetStats(userAddress?: string): Promise<BetStats> {
 // Get recent bets
 export async function getRecentBets(limit: number = 10): Promise<{ bets: Bet[] }> {
   const params = new URLSearchParams({ limit: limit.toString() });
-  const response = await fetch(`${API_URL}/bets/recent?${params}`);
+  const response = await fetch(`${API_URL}/api/bets/recent?${params}`);
   if (!response.ok) throw new Error("Failed to fetch recent bets");
   return response.json();
 } 

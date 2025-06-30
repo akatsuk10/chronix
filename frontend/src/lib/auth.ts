@@ -1,11 +1,11 @@
 import { ethers } from "ethers";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000";
 
 export async function login(walletAddress: string, signature: string) {
 
   console.log(walletAddress,signature)
-  const response = await fetch(`${API_URL}/auth/login`, {
+  const response = await fetch(`${API_URL}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ walletAddress, signature }),
@@ -22,7 +22,7 @@ export async function login(walletAddress: string, signature: string) {
 
 
 export async function verifySignature(walletAddress: string, signature: string) {
-  const response = await fetch(`${API_URL}/auth/verify`, {
+  const response = await fetch(`${API_URL}/api/auth/verify`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ walletAddress, signature }),
@@ -39,7 +39,7 @@ export async function signMessage(message: string, signer: ethers.Signer) {
 }
 
 export async function refresh(refreshToken: string) {
-  const response = await fetch(`${API_URL}/auth/refresh`, {
+  const response = await fetch(`${API_URL}/api/auth/refresh`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ refreshToken }),
